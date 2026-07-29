@@ -38,6 +38,17 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
+  # ProductTag caches title, image and price so the storefront payload needs no
+  # Admin API call. These keep that cache honest — a stale price on a shoppable
+  # video is a support ticket at best.
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/products/update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/webhooks/products/delete"
+
 [build]
 # Leaves the production URL above intact only until the next `npm run dev`,
 # which repoints the Partner dashboard at the dev tunnel. Re-run

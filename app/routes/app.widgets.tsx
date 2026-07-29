@@ -1,78 +1,76 @@
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import type {
+  ActionFunctionArgs,
+  HeadersFunction,
+  LoaderFunctionArgs,
+} from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { ensureShop } from "../lib/shop.server";
-
-const LAYOUTS = [
-  { id: "GALLERY", name: "Video gallery", detail: "A grid of videos on any page." },
-  { id: "CAROUSEL", name: "Carousel", detail: "A horizontal row shoppers swipe through." },
-  { id: "STORIES", name: "Stories", detail: "Tappable circles in a bar, like Instagram." },
-  { id: "FLOATING", name: "Floating video", detail: "A small player pinned to a corner." },
-  { id: "PRODUCT_PAGE", name: "Product page", detail: "Videos featuring the product being viewed." },
-  { id: "POPUP", name: "Popup", detail: "A full-screen player triggered on click." },
-];
+import { createWidget, listWidgets } from "../lib/widget.server";
+import {
+  LAYOUTS,
+  layoutName,
+  type WidgetLayout,
+} from "../lib/widget-config";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = await ensureShop(session.shop);
 
-  const widgets = await prisma.widget.findMany({
-    where: { shopId: shop.id },
-    orderBy: { updatedAt: "desc" },
-    include: {
-      _count: { select: { videos: true, placements: true } },
-    },
-  });
+  const [widgets, readyVideos] = await Promise.all([
+    listWidgets(shop.id),
+    prisma.video.count({
+      where: { shopId: shop.id, archivedAt: null, status: "READY" },
+    }),
+  ]);
 
   return {
     widgets: widgets.map((widget) => ({
       id: widget.id,
       name: widget.name,
-      layout: widget.layout,
-      status: widget.status,
+      layout: widget.layout as WidgetLayout,
+      status: widget.status as string,
       videoCount: widget._count.videos,
       placementCount: widget._count.placements,
     })),
+    readyVideos,
   };
 };
 
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const shop = await ensureShop(session.shop);
+  const form = await request.formData();
+
+  if (String(form.get("intent")) === "create") {
+    const layout = String(form.get("layout")) as WidgetLayout;
+    if (!LAYOUTS.some((entry) => entry.id === layout)) {
+      return { ok: false as const, error: "Pick a layout." };
+    }
+    const widget = await createWidget(
+      shop.id,
+      String(form.get("name") ?? ""),
+      layout,
+    );
+    return redirect(`/app/widgets/${widget.id}`);
+  }
+
+  return { ok: false as const, error: "Unknown action" };
+};
+
 export default function Widgets() {
-  const { widgets } = useLoaderData<typeof loader>();
+  const { widgets, readyVideos } = useLoaderData<typeof loader>();
 
   return (
     <s-page heading="Widgets">
-      <s-button slot="primary-action" disabled>
-        Create widget
-      </s-button>
-
-      {widgets.length === 0 ? (
-        <s-section heading="No widgets yet">
-          <s-paragraph>
-            A widget is a set of videos plus a layout and a place to show it.
-            Six layouts ship with Shopdart:
-          </s-paragraph>
-          <s-stack direction="block" gap="base">
-            {LAYOUTS.map((layout) => (
-              <s-box
-                key={layout.id}
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-              >
-                <s-stack direction="block" gap="small-200">
-                  <s-text type="strong">{layout.name}</s-text>
-                  <s-text color="subdued">{layout.detail}</s-text>
-                </s-stack>
-              </s-box>
-            ))}
-          </s-stack>
-        </s-section>
-      ) : (
-        <s-section heading={`${widgets.length} widget${widgets.length === 1 ? "" : "s"}`}>
-          <s-stack direction="block" gap="base">
+      {widgets.length > 0 && (
+        <s-section
+          heading={`${widgets.length} widget${widgets.length === 1 ? "" : "s"}`}
+        >
+          <s-stack direction="block" gap="small-200">
             {widgets.map((widget) => (
               <s-box
                 key={widget.id}
@@ -80,20 +78,82 @@ export default function Widgets() {
                 borderWidth="base"
                 borderRadius="base"
               >
-                <s-stack direction="block" gap="small-200">
-                  <s-text type="strong">{widget.name}</s-text>
-                  <s-text color="subdued">
-                    {widget.layout} · {widget.status} · {widget.videoCount} video
-                    {widget.videoCount === 1 ? "" : "s"} ·{" "}
-                    {widget.placementCount} placement
-                    {widget.placementCount === 1 ? "" : "s"}
-                  </s-text>
+                <s-stack
+                  direction="inline"
+                  gap="base"
+                  alignItems="center"
+                  justifyContent="space-between"
+                >
+                  <s-stack direction="block" gap="small-200">
+                    <s-text type="strong">{widget.name}</s-text>
+                    <s-text color="subdued">
+                      {layoutName(widget.layout)} ·{" "}
+                      {widget.status === "PUBLISHED" ? "Live" : "Draft"} ·{" "}
+                      {widget.videoCount} video
+                      {widget.videoCount === 1 ? "" : "s"} ·{" "}
+                      {widget.placementCount} placement
+                      {widget.placementCount === 1 ? "" : "s"}
+                    </s-text>
+                  </s-stack>
+                  <s-button
+                    href={`/app/widgets/${widget.id}`}
+                    variant="secondary"
+                  >
+                    Edit
+                  </s-button>
                 </s-stack>
               </s-box>
             ))}
           </s-stack>
         </s-section>
       )}
+
+      <s-section
+        heading={
+          widgets.length > 0
+            ? "Create another widget"
+            : "Create your first widget"
+        }
+      >
+        {readyVideos === 0 && (
+          <s-paragraph>
+            <s-text color="subdued">
+              You have no videos ready yet. You can still set a widget up and
+              add videos once they finish encoding.
+            </s-text>
+          </s-paragraph>
+        )}
+        <s-stack direction="block" gap="small-200">
+          {LAYOUTS.map((layout) => (
+            <s-box
+              key={layout.id}
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+            >
+              <form method="post">
+                <input type="hidden" name="intent" value="create" />
+                <input type="hidden" name="layout" value={layout.id} />
+                <input type="hidden" name="name" value={layout.name} />
+                <s-stack
+                  direction="inline"
+                  gap="base"
+                  alignItems="center"
+                  justifyContent="space-between"
+                >
+                  <s-stack direction="block" gap="small-200">
+                    <s-text type="strong">{layout.name}</s-text>
+                    <s-text color="subdued">{layout.detail}</s-text>
+                  </s-stack>
+                  <s-button type="submit" variant="secondary">
+                    Create
+                  </s-button>
+                </s-stack>
+              </form>
+            </s-box>
+          ))}
+        </s-stack>
+      </s-section>
 
       <s-section slot="aside" heading="How publishing works">
         <s-paragraph>

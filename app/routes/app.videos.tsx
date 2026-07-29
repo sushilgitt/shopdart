@@ -308,13 +308,21 @@ export default function Videos() {
                       )}
                     </s-stack>
                   </s-stack>
-                  <form method="post">
-                    <input type="hidden" name="intent" value="archive" />
-                    <input type="hidden" name="videoId" value={video.id} />
-                    <s-button type="submit" variant="tertiary">
-                      Remove
+                  <s-stack direction="inline" gap="small-200" alignItems="center">
+                    <s-button
+                      href={`/app/videos/${video.id}`}
+                      variant="secondary"
+                    >
+                      {video.tagCount > 0 ? "Edit tags" : "Tag products"}
                     </s-button>
-                  </form>
+                    <form method="post">
+                      <input type="hidden" name="intent" value="archive" />
+                      <input type="hidden" name="videoId" value={video.id} />
+                      <s-button type="submit" variant="tertiary">
+                        Remove
+                      </s-button>
+                    </form>
+                  </s-stack>
                 </s-stack>
               </s-box>
             ))}
