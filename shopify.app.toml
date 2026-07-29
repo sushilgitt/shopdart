@@ -39,7 +39,6 @@ api_version = "2026-07"
   uri = "/webhooks/app/scopes_update"
 
 [build]
-include_config_on_deploy = true
 # Leaves the production URL above intact only until the next `npm run dev`,
 # which repoints the Partner dashboard at the dev tunnel. Re-run
 # `npm run deploy` afterwards, or split out a separate dev config.

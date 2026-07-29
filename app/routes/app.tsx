@@ -25,6 +25,7 @@ export default function App() {
       <s-app-nav>
         <s-link href="/app">Dashboard</s-link>
         <s-link href="/app/videos">Videos</s-link>
+        <s-link href="/app/instagram">Instagram</s-link>
         <s-link href="/app/widgets">Widgets</s-link>
         <s-link href="/app/analytics">Analytics</s-link>
         <s-link href="/app/settings">Settings</s-link>
