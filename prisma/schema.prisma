@@ -1,0 +1,348 @@
+// Shopdart — shoppable videos for Shopify
+//
+// Design notes that matter when extending this file:
+//  * Video is source-agnostic on purpose. `source` + `sourceRef` form the
+//    VideoSource adapter boundary, so YouTube/Facebook can be added later
+//    without touching the player, widgets or analytics.
+//  * Everything the storefront needs is denormalised onto Widget.config and
+//    published as a CDN-cached JSON blob. `configVersion` is the cache-bust key.
+//  * VideoEvent is written from a fire-and-forget beacon and rolled up into
+//    UsageCounter. Never bill straight off VideoEvent.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+
+  @@index([shop])
+}
+
+// ---------------------------------------------------------------------------
+// Merchant
+// ---------------------------------------------------------------------------
+
+enum Plan {
+  FREE
+  BASIC
+  PREMIUM
+  ELITE
+}
+
+model Shop {
+  id     String @id @default(cuid())
+  domain String @unique // e.g. acme.myshopify.com
+
+  name         String?
+  email        String?
+  currencyCode String?
+  countryCode  String?
+  timezone     String?
+
+  installedAt   DateTime  @default(now())
+  uninstalledAt DateTime?
+  onboardedAt   DateTime?
+
+  plan          Plan      @default(FREE)
+  planUpdatedAt DateTime?
+  // Shopify AppSubscription GID. Null on the free plan.
+  billingGid    String?
+
+  // Instagram Graph API connection (merchant's own Business/Creator account).
+  // igAccessToken is a long-lived token — encrypt before writing and never
+  // include it in a loader response.
+  igUserId         String?
+  igUsername       String?
+  igAccessToken    String?
+  igTokenExpiresAt DateTime?
+  igLastSyncedAt   DateTime?
+
+  videos  Video[]
+  widgets Widget[]
+  events  VideoEvent[]
+  usage   UsageCounter[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([uninstalledAt])
+}
+
+// ---------------------------------------------------------------------------
+// Video library
+// ---------------------------------------------------------------------------
+
+enum VideoSource {
+  UPLOAD
+  INSTAGRAM
+  // Reserved for phase 2. Both are embed-only sources: neither platform
+  // exposes a downloadable file, so neither can support in-player product
+  // tagging or forced autoplay.
+  YOUTUBE
+  FACEBOOK
+}
+
+enum VideoStatus {
+  PENDING // row created, nothing sent to Bunny yet
+  UPLOADING // bytes in flight to Bunny Stream
+  PROCESSING // Bunny is transcoding
+  READY // playable
+  FAILED
+}
+
+model Video {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  source VideoSource @default(UPLOAD)
+  // Instagram media id, or the original filename for uploads.
+  sourceRef String?
+  // Permalink back to the original post, shown in the admin.
+  sourceUrl String?
+
+  title   String?
+  caption String?
+
+  // Bunny Stream
+  bunnyVideoId String?     @unique
+  status       VideoStatus @default(PENDING)
+  posterUrl    String?
+  hlsUrl       String?
+  // Progressive MP4 rendition. Preferred over HLS for clips under ~60s:
+  // faster first frame and no hls.js payload on the storefront.
+  mp4Url       String?
+  durationSec  Float?
+  width        Int?
+  height       Int?
+  sizeBytes    BigInt?
+  errorMessage String?
+
+  archivedAt DateTime?
+
+  tags         ProductTag[]
+  widgetVideos WidgetVideo[]
+  events       VideoEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, source, sourceRef])
+  @@index([shopId, status])
+  @@index([shopId, createdAt])
+}
+
+// A product pinned to a video, optionally only between startSec and endSec.
+model ProductTag {
+  id      String @id @default(cuid())
+  videoId String
+  video   Video  @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  productGid String // gid://shopify/Product/123
+  variantGid String? // optional pre-selected variant
+
+  // Cached at tag time so the storefront payload needs no Admin API call.
+  // Refreshed by the products/update webhook.
+  handle       String?
+  title        String?
+  imageUrl     String?
+  priceAmount  Decimal? @db.Decimal(12, 2)
+  currencyCode String?
+
+  startSec Float? @default(0)
+  endSec   Float?
+  position Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([videoId, productGid])
+  @@index([videoId, position])
+  @@index([productGid])
+}
+
+// ---------------------------------------------------------------------------
+// Widgets
+// ---------------------------------------------------------------------------
+
+enum WidgetLayout {
+  GALLERY
+  CAROUSEL
+  STORIES
+  FLOATING
+  PRODUCT_PAGE
+  POPUP
+}
+
+enum WidgetStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Widget {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  name   String
+  layout WidgetLayout
+  status WidgetStatus @default(DRAFT)
+
+  // Presentation only: colours, radius, autoplay, muted, CTA copy, aspect
+  // ratio, items per row.
+  config Json @default("{}")
+
+  // Bumped on every save. The storefront fetches the widget payload from the
+  // Bunny pull zone keyed on this value, so incrementing it is what makes an
+  // edit go live.
+  configVersion Int @default(1)
+
+  publishedAt DateTime?
+
+  videos     WidgetVideo[]
+  placements Placement[]
+  events     VideoEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shopId, status])
+}
+
+model WidgetVideo {
+  widgetId String
+  videoId  String
+  position Int    @default(0)
+
+  widget Widget @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+  video  Video  @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@id([widgetId, videoId])
+  @@index([widgetId, position])
+}
+
+enum PlacementTarget {
+  HOME
+  PRODUCT
+  COLLECTION
+  CART
+  ALL_PAGES
+  CUSTOM
+}
+
+model Placement {
+  id       String @id @default(cuid())
+  widgetId String
+  widget   Widget @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+
+  target PlacementTarget
+  // Scope to one resource, e.g. a single product GID. Null = every page of
+  // that target type.
+  targetRef String?
+  // Free-form path pattern when target is CUSTOM, e.g. "/pages/lookbook".
+  pathPattern String?
+
+  createdAt DateTime @default(now())
+
+  @@index([widgetId])
+  @@index([target, targetRef])
+}
+
+// ---------------------------------------------------------------------------
+// Analytics + metering
+// ---------------------------------------------------------------------------
+
+enum EventType {
+  IMPRESSION // widget scrolled into view
+  VIEW_START // playback began — this is what counts against plan limits
+  VIEW_COMPLETE
+  PRODUCT_CLICK
+  ADD_TO_CART
+  CHECKOUT_STARTED
+  PURCHASE // reconciled from the orders/create webhook
+}
+
+model VideoEvent {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  videoId  String?
+  video    Video?  @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  widgetId String?
+  widget   Widget? @relation(fields: [widgetId], references: [id], onDelete: SetNull)
+
+  type EventType
+
+  // Hashed per-browser-session key. Used to dedupe repeat impressions and to
+  // stitch a purchase back to the video that drove it. Never a raw client id.
+  sessionKey String
+  productGid String?
+
+  // Populated on PURCHASE only.
+  orderGid     String?
+  value        Decimal? @db.Decimal(12, 2)
+  currencyCode String?
+
+  occurredAt DateTime @default(now())
+
+  // One purchase per order per video, however many beacons arrive.
+  @@unique([orderGid, videoId, type])
+  @@index([shopId, occurredAt])
+  @@index([videoId, type])
+  @@index([widgetId, type])
+  @@index([sessionKey])
+}
+
+// Monthly rollup. Plan limits are enforced against this, never against a live
+// count over VideoEvent.
+model UsageCounter {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  period String // "2026-07"
+
+  impressions Int     @default(0)
+  views       Int     @default(0)
+  clicks      Int     @default(0)
+  addToCarts  Int     @default(0)
+  orders      Int     @default(0)
+  revenue     Decimal @default(0) @db.Decimal(14, 2)
+
+  // Set when the shop crosses its plan's view cap, so we only notify once.
+  capReachedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, period])
+  @@index([period])
+}
