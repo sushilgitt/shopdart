@@ -1,59 +1,46 @@
-# This file stores configurations for your Shopify app.
-# Populated by `npm run config:link` once the app exists in the Partner dashboard.
-client_id = ""
-name = "Shopdart"
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "6e20e96d66de0afff17134950c91e63c"
+name = "Shop Dart"
 handle = "shopdart"
-application_url = "https://example.com"
+application_url = "https://shopdart.91.239.208.85.sslip.io"
 embedded = true
 
-[build]
-include_config_on_deploy = true
-
 [access_scopes]
-# read_products  — product picker + product data shown on video tags
-# read_orders    — revenue attribution via the orders/create webhook.
-#                  This is protected customer data; request approval in the
-#                  Partner dashboard before submitting for review.
+# read_products — product picker and the product data shown on video tags
+# read_orders   — revenue attribution via the orders/create webhook. This is
+#                 protected customer data; request approval in the Partner
+#                 dashboard before submitting for review.
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,read_orders"
+scopes = "read_orders,read_products"
 
 [auth]
 redirect_urls = [
-  "https://example.com/auth/callback",
-  "https://example.com/auth/shopify/callback",
+  "https://shopdart.91.239.208.85.sslip.io/auth/callback",
+  "https://shopdart.91.239.208.85.sslip.io/auth/shopify/callback",
+  "https://shopdart.91.239.208.85.sslip.io/api/auth/callback",
 ]
 
 [webhooks]
-api_version = "2025-10"
+# Must match ApiVersion in app/shopify.server.ts. 2026-07 is the newest version
+# the installed @shopify/shopify-api supports — 2026-10 is not in its enum.
+api_version = "2026-07"
 
   # Handled by: /app/routes/webhooks.app.uninstalled.tsx
+  # Without this, markUninstalled() never runs: sessions are never cleaned up
+  # and uninstalled shops keep counting as active installs.
   [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
-  topics = ["app/uninstalled"]
 
   # Handled by: /app/routes/webhooks.app.scopes_update.tsx
   [[webhooks.subscriptions]]
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
-  # Webhooks can have filters
-  # Only receive webhooks for product updates with a product price >= 10.00
-  # See: https://shopify.dev/docs/apps/build/webhooks/customize/filters
-  # [[webhooks.subscriptions]]
-  # topics = ["products/update"]
-  # uri = "/webhooks/products/update"
-  # filter = "variants.price:>=10.00"
-
-  # Mandatory compliance topic for public apps only
-  # See: https://shopify.dev/docs/apps/build/privacy-law-compliance
-  # [[webhooks.subscriptions]]
-  # uri = "/webhooks/customers/data_request"
-  # compliance_topics = ["customers/data_request"]
-
-  # [[webhooks.subscriptions]]
-  # uri = "/webhooks/customers/redact"
-  # compliance_topics = ["customers/redact"]
-
-  # [[webhooks.subscriptions]]
-  # uri = "/webhooks/shop/redact"
-  # compliance_topics = ["shop/redact"]
+[build]
+include_config_on_deploy = true
+# Leaves the production URL above intact only until the next `npm run dev`,
+# which repoints the Partner dashboard at the dev tunnel. Re-run
+# `npm run deploy` afterwards, or split out a separate dev config.
+automatically_update_urls_on_dev = true
