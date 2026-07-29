@@ -49,6 +49,13 @@ api_version = "2026-07"
   topics = [ "products/delete" ]
   uri = "/webhooks/products/delete"
 
+  # Revenue attribution. The player writes cart attributes on add-to-cart and
+  # they survive into the order, so a sale is credited to the video that
+  # actually caused it rather than estimated.
+  [[webhooks.subscriptions]]
+  topics = [ "orders/create" ]
+  uri = "/webhooks/orders/create"
+
 [build]
 # Leaves the production URL above intact only until the next `npm run dev`,
 # which repoints the Partner dashboard at the dev tunnel. Re-run

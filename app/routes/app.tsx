@@ -5,6 +5,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
 import { ensureShop } from "../lib/shop.server";
+import { applyPlanHandle } from "../lib/billing.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -12,6 +13,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Shopify sends no "app installed" webhook, so this is where a shop first
   // gets provisioned.
   await ensureShop(session.shop);
+
+  // Shopify App Pricing appends `plan_handle` to whatever redirect URL is
+  // configured after a merchant picks a plan, and they can land on any page
+  // in the app — so it is read here, at the root, rather than on a dedicated
+  // billing callback route.
+  const planHandle = new URL(request.url).searchParams.get("plan_handle");
+  if (planHandle) {
+    await applyPlanHandle(session.shop, planHandle);
+  }
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };

@@ -100,6 +100,29 @@
 
   // ---------------------------------------------------------------- cart ---
 
+  /**
+   * Stamps the cart so the order can be credited back to this video.
+   *
+   * Must be /cart/update.js, not /cart/add.js: only cart-level attributes
+   * survive into the order as note_attributes, which is what the orders/create
+   * webhook reads. Line item properties would be visible to the shopper and
+   * would not travel.
+   */
+  function stampCart(videoId, widgetId) {
+    var attributes = {};
+    attributes["_shopdart_video"] = videoId;
+    attributes["_shopdart_widget"] = widgetId;
+    attributes["_shopdart_session"] = session();
+
+    return fetch("/cart/update.js", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attributes: attributes }),
+    }).catch(function () {
+      // Attribution is a nice-to-have; never let it break the purchase.
+    });
+  }
+
   function addToCart(variantId, button, onDone) {
     var original = button.textContent;
     button.disabled = true;
@@ -197,6 +220,7 @@
           event.preventDefault();
           track(shop, "PRODUCT_CLICK", widget.id, video.id, product.id);
           addToCart(product.variantId, button, function () {
+            stampCart(video.id, widget.id);
             track(shop, "ADD_TO_CART", widget.id, video.id, product.id);
             flush(shop);
           });
