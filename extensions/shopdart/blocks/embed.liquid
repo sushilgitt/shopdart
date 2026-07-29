@@ -1,0 +1,44 @@
+{%- comment -%}
+  Shopdart — app embed.
+
+  Enabled once in Theme settings and applies site-wide. Handles the layouts
+  that are not tied to a position in a section: the floating player and the
+  popup.
+
+  Kept separate from the section block on purpose. An app embed renders on
+  every page, so it must stay near-zero cost when the merchant has no floating
+  or popup widget published — which is why it emits a bare container and lets
+  the player decide whether anything is due.
+{%- endcomment -%}
+
+{%- if block.settings.enabled -%}
+  {{ 'shopdart.css' | asset_url | stylesheet_tag }}
+
+  <div
+    class="shopdart shopdart--embed"
+    data-shopdart
+    data-shop="{{ shop.permanent_domain }}"
+    data-page="{{ request.page_type }}"
+    {%- if product %} data-product="gid://shopify/Product/{{ product.id }}"{% endif %}
+    {%- if collection %} data-collection="gid://shopify/Collection/{{ collection.id }}"{% endif %}
+    data-layouts="FLOATING,POPUP"
+    hidden
+  ></div>
+
+  <script src="{{ 'shopdart.js' | asset_url }}" defer></script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Shopdart floating video",
+  "target": "body",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "enabled",
+      "label": "Enable floating and popup videos",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

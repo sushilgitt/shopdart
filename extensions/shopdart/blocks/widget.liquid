@@ -1,0 +1,59 @@
+{%- comment -%}
+  Shopdart — shoppable video block.
+
+  Renders an empty, correctly-sized container and nothing else. The player
+  fetches its data client-side from a CDN-cached document, so this block adds
+  no render-blocking work and no Liquid-side API calls.
+
+  The `aspect-ratio` and `min-height` below exist to reserve layout space
+  before the player mounts. Without them the page reflows when videos arrive,
+  which is a Core Web Vitals (CLS) failure and one of the things "Built for
+  Shopify" checks.
+{%- endcomment -%}
+
+{{ 'shopdart.css' | asset_url | stylesheet_tag }}
+
+<div
+  class="shopdart"
+  data-shopdart
+  data-shop="{{ shop.permanent_domain }}"
+  data-page="{{ request.page_type }}"
+  {%- if product %} data-product="gid://shopify/Product/{{ product.id }}"{% endif %}
+  {%- if collection %} data-collection="gid://shopify/Collection/{{ collection.id }}"{% endif %}
+  {%- if block.settings.widget_id != blank %} data-widget="{{ block.settings.widget_id }}"{% endif %}
+  data-layouts="CAROUSEL,GALLERY,STORIES,PRODUCT_PAGE"
+  style="--shopdart-max-width: {{ block.settings.max_width }}px;"
+>
+  <div class="shopdart__skeleton" aria-hidden="true"></div>
+</div>
+
+<script src="{{ 'shopdart.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Shoppable videos",
+  "target": "section",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Videos come from your Shopdart app. Choose which pages a widget appears on there — this block shows whatever you have published for this page."
+    },
+    {
+      "type": "text",
+      "id": "widget_id",
+      "label": "Specific widget ID (optional)",
+      "info": "Leave blank to show every widget published for this page. Paste an ID to pin this block to one widget."
+    },
+    {
+      "type": "range",
+      "id": "max_width",
+      "label": "Maximum width",
+      "min": 600,
+      "max": 1600,
+      "step": 50,
+      "unit": "px",
+      "default": 1200
+    }
+  ]
+}
+{% endschema %}

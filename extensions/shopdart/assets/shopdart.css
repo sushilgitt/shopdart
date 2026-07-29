@@ -1,0 +1,309 @@
+/* Shopdart storefront player.
+   Everything is namespaced under .shopdart so it cannot leak into the theme,
+   and every value that a merchant can change arrives as a custom property set
+   inline by the player. */
+
+.shopdart {
+  --shopdart-radius: 12px;
+  --shopdart-accent: #111827;
+  --shopdart-accent-text: #ffffff;
+  --shopdart-ratio: 9 / 16;
+  --shopdart-per-row: 4;
+  --shopdart-gap: 12px;
+  --shopdart-max-width: 1200px;
+
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--shopdart-max-width);
+  margin: 0 auto;
+  padding: 24px 16px;
+  font-family: inherit;
+  color: inherit;
+}
+
+.shopdart *,
+.shopdart *::before,
+.shopdart *::after {
+  box-sizing: border-box;
+}
+
+/* Reserves height before the player mounts so arriving videos don't shift the
+   page. Removed by the script once real content is in place. */
+.shopdart__skeleton {
+  aspect-ratio: var(--shopdart-ratio);
+  max-height: 420px;
+  border-radius: var(--shopdart-radius);
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.shopdart--embed {
+  padding: 0;
+  max-width: none;
+}
+
+.shopdart__heading {
+  margin: 0 0 16px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* --- rails ------------------------------------------------------------- */
+
+.shopdart__rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc(
+    (100% - (var(--shopdart-per-row) - 1) * var(--shopdart-gap)) /
+      var(--shopdart-per-row)
+  );
+  gap: var(--shopdart-gap);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+
+.shopdart__rail::-webkit-scrollbar {
+  display: none;
+}
+
+.shopdart__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--shopdart-per-row), minmax(0, 1fr));
+  gap: var(--shopdart-gap);
+}
+
+@media (max-width: 900px) {
+  .shopdart__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .shopdart__rail {
+    grid-auto-columns: 62%;
+  }
+}
+
+/* --- tile -------------------------------------------------------------- */
+
+.shopdart__tile {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #000;
+  border-radius: var(--shopdart-radius);
+  overflow: hidden;
+  aspect-ratio: var(--shopdart-ratio);
+  scroll-snap-align: start;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  isolation: isolate;
+}
+
+.shopdart__tile:focus-visible {
+  outline: 2px solid var(--shopdart-accent);
+  outline-offset: 2px;
+}
+
+.shopdart__media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.shopdart__poster {
+  z-index: 1;
+  transition: opacity 0.2s ease;
+}
+
+.shopdart__tile[data-playing="true"] .shopdart__poster {
+  opacity: 0;
+}
+
+.shopdart__video {
+  z-index: 0;
+}
+
+/* --- stories ----------------------------------------------------------- */
+
+.shopdart__stories {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px 0;
+}
+
+.shopdart__stories::-webkit-scrollbar {
+  display: none;
+}
+
+.shopdart__story {
+  flex: 0 0 auto;
+  width: 76px;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: center;
+}
+
+.shopdart__story img {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  padding: 2px;
+  border: 2px solid var(--shopdart-accent);
+}
+
+.shopdart__story span {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* --- product card overlay ---------------------------------------------- */
+
+.shopdart__products {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.shopdart__product {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: calc(var(--shopdart-radius) / 1.5);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(6px);
+  color: #111;
+  text-decoration: none;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+.shopdart__product img {
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.shopdart__product-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.shopdart__product-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.shopdart__product-price {
+  opacity: 0.7;
+}
+
+.shopdart__cta {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--shopdart-accent);
+  color: var(--shopdart-accent-text);
+}
+
+.shopdart__cta[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* --- floating ---------------------------------------------------------- */
+
+.shopdart__floating {
+  position: fixed;
+  z-index: 2147483000;
+  width: 150px;
+  aspect-ratio: var(--shopdart-ratio);
+  border-radius: var(--shopdart-radius);
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  background: #000;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+
+.shopdart__floating[data-position="bottom-right"] { right: 16px; bottom: 16px; }
+.shopdart__floating[data-position="bottom-left"]  { left: 16px;  bottom: 16px; }
+.shopdart__floating[data-position="top-right"]    { right: 16px; top: 16px; }
+.shopdart__floating[data-position="top-left"]     { left: 16px;  top: 16px; }
+
+.shopdart__close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* --- lightbox ---------------------------------------------------------- */
+
+.shopdart__lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483001;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.shopdart__lightbox .shopdart__tile {
+  width: min(440px, 92vw);
+  max-height: 90vh;
+  aspect-ratio: var(--shopdart-ratio);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shopdart__poster {
+    transition: none;
+  }
+}
