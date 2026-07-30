@@ -1,5 +1,11 @@
 import prisma from "../db.server";
-import { parseConfig, type WidgetConfig, type WidgetLayout, type PlacementTarget } from "./widget-config";
+import { planFor } from "./plans";
+import {
+  parseConfig,
+  type PlacementTarget,
+  type WidgetConfig,
+  type WidgetLayout,
+} from "./widget-config";
 
 /**
  * The payload the storefront player consumes.
@@ -13,6 +19,13 @@ import { parseConfig, type WidgetConfig, type WidgetLayout, type PlacementTarget
 export interface StorefrontPayload {
   shop: string;
   generatedAt: string;
+  /** ISO currency of the store, so the player formats prices correctly. */
+  currency: string | null;
+  /**
+   * Free plan shows a small "Powered by Shopdart" badge. This is the concrete
+   * reason to upgrade to Basic, so it has to actually render.
+   */
+  watermark: boolean;
   widgets: StorefrontWidget[];
 }
 
@@ -65,13 +78,25 @@ export async function buildStorefrontPayload(
 ): Promise<StorefrontPayload | null> {
   const shop = await prisma.shop.findUnique({
     where: { domain: shopDomain },
-    select: { id: true, domain: true, uninstalledAt: true },
+    select: {
+      id: true,
+      domain: true,
+      uninstalledAt: true,
+      plan: true,
+      currencyCode: true,
+    },
   });
 
   // Serve an empty payload rather than 404 for uninstalled shops: a theme may
   // still contain the block, and an error there is noisier than nothing.
   if (!shop || shop.uninstalledAt) {
-    return { shop: shopDomain, generatedAt: new Date().toISOString(), widgets: [] };
+    return {
+      shop: shopDomain,
+      generatedAt: new Date().toISOString(),
+      currency: null,
+      watermark: false,
+      widgets: [],
+    };
   }
 
   const widgets = await prisma.widget.findMany({
@@ -92,6 +117,8 @@ export async function buildStorefrontPayload(
   return {
     shop: shop.domain,
     generatedAt: new Date().toISOString(),
+    currency: shop.currencyCode,
+    watermark: planFor(shop.plan).watermark,
     widgets: widgets
       .map((widget) => ({
         id: widget.id,

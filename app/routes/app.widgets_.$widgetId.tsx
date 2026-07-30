@@ -38,6 +38,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     include: { _count: { select: { tags: true } } },
   });
 
+  const positions = new Map(
+    widget.videos.map((entry) => [entry.videoId, entry.position]),
+  );
   const selected = new Set(widget.videos.map((entry) => entry.videoId));
 
   return {
@@ -51,13 +54,23 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     },
     config: parseConfig(widget.config, widget.layout),
     placements: widget.placements.map((placement) => placement.target as string),
-    library: library.map((video) => ({
-      id: video.id,
-      title: video.title ?? "Untitled",
-      posterUrl: video.posterUrl,
-      tagCount: video._count.tags,
-      selected: selected.has(video.id),
-    })),
+    library: library
+      .map((video) => ({
+        id: video.id,
+        title: video.title ?? "Untitled",
+        posterUrl: video.posterUrl,
+        tagCount: video._count.tags,
+        selected: selected.has(video.id),
+        position: positions.get(video.id) ?? null,
+      }))
+      // Show chosen videos first, in the order they'll actually play.
+      .sort((a, b) => {
+        if (a.selected !== b.selected) return a.selected ? -1 : 1;
+        if (a.selected && b.selected) {
+          return (a.position ?? 0) - (b.position ?? 0);
+        }
+        return 0;
+      }),
     untaggedSelected: widget.videos.filter(
       (entry) => entry.video._count.tags === 0,
     ).length,
@@ -91,11 +104,19 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   if (intent === "videos") {
-    await setWidgetVideos(
-      shop.id,
-      widgetId,
-      form.getAll("videoId").map(String),
-    );
+    // Checkboxes arrive in DOM order, which is library order. The merchant's
+    // intended order comes from the numeric inputs beside them, so sort by
+    // that before saving — otherwise videos are permanently stuck newest-first.
+    const chosen = form.getAll("videoId").map(String);
+    const ordered = chosen
+      .map((id) => ({
+        id,
+        position: Number(form.get(`position:${id}`) ?? Number.MAX_SAFE_INTEGER),
+      }))
+      .sort((a, b) => a.position - b.position)
+      .map((entry) => entry.id);
+
+    await setWidgetVideos(shop.id, widgetId, ordered);
     return { ok: true as const, saved: "videos" };
   }
 
@@ -241,26 +262,49 @@ export default function WidgetEditor() {
         ) : (
           <form method="post">
             <input type="hidden" name="intent" value="videos" />
+            <s-paragraph>
+              <s-text color="subdued">
+                Tick the videos to include. The order number controls the order
+                they play in — lowest first.
+              </s-text>
+            </s-paragraph>
             <s-stack direction="block" gap="small-200">
-              {library.map((video) => (
+              {library.map((video, index) => (
                 <s-box
                   key={video.id}
                   padding="base"
                   borderWidth="base"
                   borderRadius="base"
                 >
-                  <s-stack direction="inline" gap="base" alignItems="center">
-                    <s-checkbox
-                      name="videoId"
-                      value={video.id}
-                      label={video.title}
-                      checked={video.selected}
+                  <s-stack
+                    direction="inline"
+                    gap="base"
+                    alignItems="center"
+                    justifyContent="space-between"
+                  >
+                    <s-stack direction="inline" gap="base" alignItems="center">
+                      <s-checkbox
+                        name="videoId"
+                        value={video.id}
+                        label={video.title}
+                        checked={video.selected}
+                      />
+                      <s-text color="subdued">
+                        {video.tagCount > 0
+                          ? `${video.tagCount} product${video.tagCount === 1 ? "" : "s"}`
+                          : "No products tagged"}
+                      </s-text>
+                    </s-stack>
+                    <s-number-field
+                      name={`position:${video.id}`}
+                      label="Order"
+                      labelAccessibilityVisibility="exclusive"
+                      min={1}
+                      max={999}
+                      value={String(
+                        video.position !== null ? video.position + 1 : index + 1,
+                      )}
                     />
-                    <s-text color="subdued">
-                      {video.tagCount > 0
-                        ? `${video.tagCount} product${video.tagCount === 1 ? "" : "s"}`
-                        : "No products tagged"}
-                    </s-text>
                   </s-stack>
                 </s-box>
               ))}

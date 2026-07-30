@@ -256,11 +256,6 @@ export function posterUrl(
   return `https://${cfg.cdnHostname}/${guid}/${thumbnailFileName}`;
 }
 
-/** Animated hover preview. */
-export function previewUrl(guid: string, config?: BunnyConfig): string {
-  const cfg = config ?? bunnyConfig();
-  return `https://${cfg.cdnHostname}/${guid}/preview.webp`;
-}
 
 /**
  * Picks the best MP4 rendition Bunny actually produced. `availableResolutions`

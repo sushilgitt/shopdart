@@ -246,6 +246,22 @@
   cursor: default;
 }
 
+/* --- free plan badge --------------------------------------------------- */
+
+.shopdart__badge {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  opacity: 0.45;
+  color: inherit;
+  text-decoration: none;
+}
+
+.shopdart__badge:hover {
+  opacity: 0.75;
+}
+
 /* --- floating ---------------------------------------------------------- */
 
 .shopdart__floating {

@@ -355,7 +355,7 @@ export default function Videos() {
               Connect your Instagram Business or Creator account to sync your own
               reels.
             </s-paragraph>
-            <s-button disabled variant="secondary">
+            <s-button href="/app/instagram" variant="secondary">
               Connect Instagram
             </s-button>
           </>

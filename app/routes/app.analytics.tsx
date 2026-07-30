@@ -54,11 +54,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     videos: videos.slice(0, 50),
     totals,
     monthViews: counter?.views ?? 0,
+    currency: shop.currencyCode,
   };
 };
 
 export default function Analytics() {
-  const { days, ranges, videos, totals } = useLoaderData<typeof loader>();
+  const { days, ranges, videos, totals, currency } =
+    useLoaderData<typeof loader>();
 
   const rangeLabel =
     ranges.find((range) => range.days === days)?.label ?? `${days} days`;
@@ -67,10 +69,12 @@ export default function Analytics() {
     denominator > 0 ? `${((numerator / denominator) * 100).toFixed(1)}%` : "—";
 
   const money = (value: number) =>
-    value.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    currency
+      ? value.toLocaleString(undefined, { style: "currency", currency })
+      : value.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
 
   return (
     <s-page heading="Analytics">

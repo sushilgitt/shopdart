@@ -176,9 +176,19 @@
     return parts[0] + " / " + parts[1];
   }
 
+  // Store currency, taken from the payload. Without it prices render as bare
+  // numbers, which reads as a bug to shoppers outside the merchant's country.
+  var CURRENCY = null;
+
   function money(amount) {
     if (amount === null || amount === undefined) return "";
     try {
+      if (CURRENCY) {
+        return amount.toLocaleString(undefined, {
+          style: "currency",
+          currency: CURRENCY,
+        });
+      }
       return amount.toLocaleString(undefined, {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
@@ -186,6 +196,17 @@
     } catch (error) {
       return String(amount);
     }
+  }
+
+  /** "Powered by Shopdart" badge — free plan only. */
+  function buildWatermark() {
+    var link = el("a", "shopdart__badge", {
+      href: "https://shopdart.io",
+      target: "_blank",
+      rel: "noopener nofollow",
+    });
+    link.textContent = "Powered by Shopdart";
+    return link;
   }
 
   function buildProducts(video, config, shop, widget) {
@@ -354,7 +375,7 @@
     return observer;
   }
 
-  function renderWidget(root, widget, shop) {
+  function renderWidget(root, widget, shop, watermark) {
     var config = widget.config;
     applyConfig(root, config);
 
@@ -401,6 +422,8 @@
       });
       container.appendChild(list);
     }
+
+    if (watermark) container.appendChild(buildWatermark());
 
     root.appendChild(container);
     if (tiles.length) observe(tiles, config);
@@ -501,6 +524,8 @@
       if (skeleton) skeleton.remove();
       if (!payload || !payload.widgets) return;
 
+      CURRENCY = payload.currency || null;
+
       var due = payload.widgets.filter(function (widget) {
         if (allowed.indexOf(widget.layout) === -1) return false;
         if (pinned) return widget.id === pinned;
@@ -532,7 +557,7 @@
         } else if (widget.layout === "POPUP") {
           // Popups open from a stories tap; nothing renders inline.
         } else {
-          renderWidget(root, widget, shop);
+          renderWidget(root, widget, shop, payload.watermark);
         }
       });
 

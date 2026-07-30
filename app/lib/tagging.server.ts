@@ -24,12 +24,6 @@ export interface PickedProduct {
   }[];
 }
 
-export async function listTags(videoId: string) {
-  return prisma.productTag.findMany({
-    where: { videoId },
-    orderBy: { position: "asc" },
-  });
-}
 
 /**
  * Attaches products to a video, ignoring any already tagged.

@@ -21,3 +21,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   return new Response();
 };
+
+/** Shopify only POSTs here. Answering GET keeps stack traces out of the logs. */
+export const loader = () => new Response("Method not allowed", { status: 405 });

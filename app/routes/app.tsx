@@ -4,15 +4,49 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
-import { ensureShop } from "../lib/shop.server";
+import { ensureShop, updateShopProfile } from "../lib/shop.server";
 import { applyPlanHandle } from "../lib/billing.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   // Shopify sends no "app installed" webhook, so this is where a shop first
   // gets provisioned.
-  await ensureShop(session.shop);
+  const shop = await ensureShop(session.shop);
+
+  // Backfill store details once. Currency in particular matters: without it
+  // every price in the app and on the storefront renders as a bare number,
+  // which reads as a bug to anyone outside the merchant's country.
+  if (!shop.currencyCode) {
+    try {
+      const response = await admin.graphql(
+        `#graphql
+          query shopdartShopProfile {
+            shop {
+              name
+              contactEmail
+              ianaTimezone
+              currencyCode
+              billingAddress { countryCodeV2 }
+            }
+          }`,
+      );
+      const body = await response.json();
+      const profile = body?.data?.shop;
+      if (profile) {
+        await updateShopProfile(session.shop, {
+          name: profile.name ?? null,
+          email: profile.contactEmail ?? null,
+          currencyCode: profile.currencyCode ?? null,
+          countryCode: profile.billingAddress?.countryCodeV2 ?? null,
+          timezone: profile.ianaTimezone ?? null,
+        });
+      }
+    } catch (error) {
+      // Never block the admin from loading over a cosmetic backfill.
+      console.error("Shop profile backfill failed", error);
+    }
+  }
 
   // Shopify App Pricing appends `plan_handle` to whatever redirect URL is
   // configured after a merchant picks a plan, and they can land on any page
