@@ -1,7 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import type { ActionFunctionArgs } from "react-router";
 import { refreshExpiringTokens } from "../lib/instagram-sync.server";
-import { reapStalledUploads } from "../lib/video.server";
+import {
+  reapStalledUploads,
+  reconcileProcessingVideos,
+} from "../lib/video.server";
 
 /**
  * Scheduled maintenance. Point a daily cron at:
@@ -37,12 +40,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const tokens = await refreshExpiringTokens();
   const reaped = await reapStalledUploads();
+  const reconciled = await reconcileProcessingVideos();
 
   return Response.json({
     ok: true,
     instagramTokensRefreshed: tokens.refreshed,
     instagramTokensFailed: tokens.failed,
     stalledUploadsReaped: reaped,
+    videosPromoted: reconciled.promoted,
+    videosFailed: reconciled.failed,
+    videosStillProcessing: reconciled.pending,
   });
 };
 

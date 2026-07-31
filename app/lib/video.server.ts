@@ -2,6 +2,7 @@ import { VideoSource, VideoStatus, type Shop, type Video } from "@prisma/client"
 import prisma from "../db.server";
 import { planFor } from "./plans";
 import {
+  BunnyApiStatus,
   BunnyWebhookStatus,
   bestMp4Resolution,
   createBunnyVideo,
@@ -175,6 +176,81 @@ export async function archiveVideo(shopId: string, videoId: string): Promise<voi
     where: { id: video.id },
     data: { archivedAt: new Date(), status: VideoStatus.FAILED },
   });
+}
+
+/**
+ * Promotes videos whose transcode webhook never arrived.
+ *
+ * Bunny fires each status change exactly once and never replays it. A webhook
+ * dropped in flight — or one that fired before the library had a webhook URL
+ * configured at all — leaves a video stuck in PROCESSING permanently, with no
+ * path back and nothing surfaced to the merchant. Polling Bunny for anything
+ * that has sat in PROCESSING past the grace period closes that hole.
+ *
+ * Cheap to run: the matched set is empty in the normal case, because the
+ * webhook usually wins.
+ */
+export async function reconcileProcessingVideos(
+  olderThanMinutes = 15,
+  limit = 50,
+): Promise<{ promoted: number; failed: number; pending: number }> {
+  const cutoff = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+
+  const stuck = await prisma.video.findMany({
+    where: {
+      status: VideoStatus.PROCESSING,
+      bunnyVideoId: { not: null },
+      archivedAt: null,
+      updatedAt: { lt: cutoff },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: limit,
+  });
+
+  let promoted = 0;
+  let failed = 0;
+  let pending = 0;
+
+  for (const video of stuck) {
+    try {
+      const remote = await getBunnyVideo(video.bunnyVideoId!);
+
+      // Only these two are definitively playable. JitSegmenting is still in
+      // flight, and promoting on it would publish a video that 404s.
+      if (
+        remote.status === BunnyApiStatus.Finished ||
+        remote.status === BunnyApiStatus.JitPlaylistsCreated
+      ) {
+        await promoteToReady(video);
+        promoted += 1;
+        continue;
+      }
+
+      if (
+        remote.status === BunnyApiStatus.Error ||
+        remote.status === BunnyApiStatus.UploadFailed
+      ) {
+        await prisma.video.update({
+          where: { id: video.id },
+          data: {
+            status: VideoStatus.FAILED,
+            errorMessage: "Bunny Stream could not encode this video.",
+          },
+        });
+        failed += 1;
+        continue;
+      }
+
+      pending += 1;
+    } catch (error) {
+      // A Bunny outage or a deleted remote asset shouldn't abort the sweep —
+      // the rest of the batch still deserves a chance.
+      console.error(`Reconcile failed for video ${video.id}`, error);
+      pending += 1;
+    }
+  }
+
+  return { promoted, failed, pending };
 }
 
 /**
