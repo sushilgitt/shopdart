@@ -4,7 +4,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { Form, useFetcher, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
@@ -320,12 +320,12 @@ export default function Instagram() {
               </s-text>
             </s-paragraph>
           )}
-          <form method="post">
+          <Form method="post">
             <input type="hidden" name="intent" value="disconnect" />
             <s-button type="submit" variant="tertiary">
               Disconnect
             </s-button>
-          </form>
+          </Form>
         </s-section>
       )}
     </s-page>

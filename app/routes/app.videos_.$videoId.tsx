@@ -4,7 +4,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { Form, useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -198,7 +198,7 @@ export default function VideoDetail() {
                   </s-stack>
 
                   <s-stack direction="inline" gap="small-200" alignItems="center">
-                    <form method="post">
+                    <Form method="post">
                       <input type="hidden" name="intent" value="timing" />
                       <input type="hidden" name="tagId" value={tag.id} />
                       <s-stack direction="inline" gap="small-200" alignItems="center">
@@ -220,14 +220,14 @@ export default function VideoDetail() {
                           Save
                         </s-button>
                       </s-stack>
-                    </form>
-                    <form method="post">
+                    </Form>
+                    <Form method="post">
                       <input type="hidden" name="intent" value="untag" />
                       <input type="hidden" name="tagId" value={tag.id} />
                       <s-button type="submit" variant="tertiary">
                         Remove
                       </s-button>
-                    </form>
+                    </Form>
                   </s-stack>
                 </s-stack>
               </s-box>

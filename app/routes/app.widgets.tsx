@@ -3,7 +3,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { redirect, useLoaderData } from "react-router";
+import { Form, redirect, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
@@ -131,7 +131,7 @@ export default function Widgets() {
               borderWidth="base"
               borderRadius="base"
             >
-              <form method="post">
+              <Form method="post">
                 <input type="hidden" name="intent" value="create" />
                 <input type="hidden" name="layout" value={layout.id} />
                 <input type="hidden" name="name" value={layout.name} />
@@ -149,7 +149,7 @@ export default function Widgets() {
                     Create
                   </s-button>
                 </s-stack>
-              </form>
+              </Form>
             </s-box>
           ))}
         </s-stack>

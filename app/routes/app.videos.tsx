@@ -4,7 +4,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useLoaderData, useRevalidator } from "react-router";
+import { Form, useLoaderData, useRevalidator } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
@@ -12,12 +12,7 @@ import prisma from "../db.server";
 import { ensureShop } from "../lib/shop.server";
 import { planFor } from "../lib/plans";
 import { isBunnyConfigured } from "../lib/bunny.server";
-import {
-  PlanLimitError,
-  archiveVideo,
-  beginUpload,
-  countActiveVideos,
-} from "../lib/video.server";
+import { archiveVideo, countActiveVideos } from "../lib/video.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -55,31 +50,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
 
-  if (intent === "begin-upload") {
-    const fileName = String(form.get("fileName") ?? "video.mp4");
-    const title = String(form.get("title") ?? "");
-    try {
-      const { video, upload } = await beginUpload(shop, fileName, title);
-      return { ok: true as const, videoId: video.id, upload };
-    } catch (error) {
-      if (error instanceof PlanLimitError) {
-        return {
-          ok: false as const,
-          error: `You've used all ${error.limit} videos on your plan. Remove one or upgrade to add more.`,
-        };
-      }
-      console.error("beginUpload failed", error);
-      const notConfigured =
-        error instanceof Error && error.message.includes("not configured");
-      return {
-        ok: false as const,
-        error: notConfigured
-          ? "Video hosting isn't set up yet. Add your Bunny Stream keys first."
-          : "Could not start the upload. Please try again.",
-      };
-    }
-  }
-
+  // Upload credentials are issued by the /api/upload resource route, not here:
+  // this route renders a document, so it cannot answer with JSON.
   if (intent === "archive") {
     await archiveVideo(shop.id, String(form.get("videoId")));
     return { ok: true as const };
@@ -116,10 +88,11 @@ export default function Videos() {
         }));
 
         // Ask our server for a Bunny slot plus signed upload credentials.
+        // Posted to the resource route rather than this page: a POST to a page
+        // route is a document request and answers with HTML, not JSON.
         const body = new FormData();
-        body.set("intent", "begin-upload");
         body.set("fileName", file.name);
-        const response = await fetch("/app/videos", {
+        const response = await fetch("/api/upload", {
           method: "POST",
           body,
         });
@@ -315,13 +288,13 @@ export default function Videos() {
                     >
                       {video.tagCount > 0 ? "Edit tags" : "Tag products"}
                     </s-button>
-                    <form method="post">
+                    <Form method="post">
                       <input type="hidden" name="intent" value="archive" />
                       <input type="hidden" name="videoId" value={video.id} />
                       <s-button type="submit" variant="tertiary">
                         Remove
                       </s-button>
-                    </form>
+                    </Form>
                   </s-stack>
                 </s-stack>
               </s-box>

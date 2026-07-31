@@ -3,7 +3,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { redirect, useLoaderData } from "react-router";
+import { Form, redirect, useLoaderData } from "react-router";
 import { PlacementTarget, WidgetStatus } from "@prisma/client";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -161,7 +161,7 @@ export default function WidgetEditor() {
 
   return (
     <s-page heading={widget.name}>
-      <form method="post" slot="primary-action">
+      <Form method="post" slot="primary-action">
         <input
           type="hidden"
           name="intent"
@@ -173,13 +173,13 @@ export default function WidgetEditor() {
         >
           {live ? "Unpublish" : "Publish"}
         </s-button>
-      </form>
+      </Form>
       <s-button slot="secondary-actions" href="/app/widgets" variant="tertiary">
         Back to widgets
       </s-button>
 
       <s-section heading="Settings">
-        <form method="post">
+        <Form method="post">
           <input type="hidden" name="intent" value="config" />
           <s-stack direction="block" gap="base">
             <s-text-field name="name" label="Widget name" value={widget.name} />
@@ -248,7 +248,7 @@ export default function WidgetEditor() {
             />
             <s-button type="submit">Save settings</s-button>
           </s-stack>
-        </form>
+        </Form>
       </s-section>
 
       <s-section
@@ -260,7 +260,7 @@ export default function WidgetEditor() {
             come back to add it here.
           </s-paragraph>
         ) : (
-          <form method="post">
+          <Form method="post">
             <input type="hidden" name="intent" value="videos" />
             <s-paragraph>
               <s-text color="subdued">
@@ -310,12 +310,12 @@ export default function WidgetEditor() {
               ))}
               <s-button type="submit">Save video selection</s-button>
             </s-stack>
-          </form>
+          </Form>
         )}
       </s-section>
 
       <s-section heading="Where it appears">
-        <form method="post">
+        <Form method="post">
           <input type="hidden" name="intent" value="placements" />
           <s-stack direction="block" gap="small-200">
             {PLACEMENT_TARGETS.map((target) => (
@@ -338,7 +338,7 @@ export default function WidgetEditor() {
             ))}
             <s-button type="submit">Save placements</s-button>
           </s-stack>
-        </form>
+        </Form>
       </s-section>
 
       <s-section slot="aside" heading="Status">
@@ -366,12 +366,12 @@ export default function WidgetEditor() {
       </s-section>
 
       <s-section slot="aside" heading="Danger zone">
-        <form method="post">
+        <Form method="post">
           <input type="hidden" name="intent" value="delete" />
           <s-button type="submit" variant="tertiary">
             Delete widget
           </s-button>
-        </form>
+        </Form>
       </s-section>
     </s-page>
   );
