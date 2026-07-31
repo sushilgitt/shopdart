@@ -3,7 +3,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { Form, redirect, useLoaderData } from "react-router";
+import { Form, redirect, useLoaderData, useSubmit } from "react-router";
 import { PlacementTarget, WidgetStatus } from "@prisma/client";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -155,25 +155,28 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 export default function WidgetEditor() {
   const { widget, config, placements, library, untaggedSelected } =
     useLoaderData<typeof loader>();
+  const submit = useSubmit();
 
   const live = widget.status === "PUBLISHED";
   const selectedCount = library.filter((video) => video.selected).length;
 
   return (
     <s-page heading={widget.name}>
-      <Form method="post" slot="primary-action">
-        <input
-          type="hidden"
-          name="intent"
-          value={live ? "unpublish" : "publish"}
-        />
-        <s-button
-          type="submit"
-          {...(!live && selectedCount === 0 ? { disabled: true } : {})}
-        >
-          {live ? "Unpublish" : "Publish"}
-        </s-button>
-      </Form>
+      {/*
+        Must be a bare s-button. s-page only projects the button itself into
+        the primary-action slot, so wrapping it in a form element makes the
+        control disappear from the page header entirely rather than render
+        unstyled — which is why publishing was impossible from the UI.
+      */}
+      <s-button
+        slot="primary-action"
+        onClick={() =>
+          submit({ intent: live ? "unpublish" : "publish" }, { method: "post" })
+        }
+        {...(!live && selectedCount === 0 ? { disabled: true } : {})}
+      >
+        {live ? "Unpublish" : "Publish"}
+      </s-button>
       <s-button slot="secondary-actions" href="/app/widgets" variant="tertiary">
         Back to widgets
       </s-button>
