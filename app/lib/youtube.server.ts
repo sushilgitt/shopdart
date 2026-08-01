@@ -318,6 +318,66 @@ export async function fetchUploads(
   return { videos, nextPageToken: page.nextPageToken ?? null };
 }
 
+interface VideosDetailResponse {
+  items?: {
+    id: string;
+    snippet?: {
+      title?: string;
+      description?: string;
+      publishedAt?: string;
+      thumbnails?: Record<string, { url?: string } | undefined>;
+    };
+    contentDetails?: { duration?: string };
+    status?: { embeddable?: boolean };
+  }[];
+}
+
+/**
+ * Reads specific videos by id — one quota unit per 50, whatever the channel's
+ * size.
+ *
+ * Importing must never page through the uploads playlist hunting for the
+ * chosen ids: that costs two units per page and scales with how far down the
+ * channel the selection sits. Asking for exactly the ids wanted is a fixed,
+ * trivial cost, and quota is the binding constraint on this integration.
+ */
+export async function fetchVideosByIds(
+  ids: string[],
+  config?: YouTubeConfig,
+): Promise<Map<string, YouTubeVideo>> {
+  const found = new Map<string, YouTubeVideo>();
+  if (ids.length === 0) return found;
+
+  const cfg = config ?? youtubeConfig();
+
+  // videos.list accepts at most 50 ids per call.
+  for (let offset = 0; offset < ids.length; offset += 50) {
+    const batch = ids.slice(offset, offset + 50);
+
+    const data = await ytFetch<VideosDetailResponse>(
+      "videos",
+      { part: "snippet,contentDetails,status", id: batch.join(",") },
+      cfg,
+    );
+
+    for (const item of data.items ?? []) {
+      const durationSec = parseIsoDuration(item.contentDetails?.duration);
+      found.set(item.id, {
+        id: item.id,
+        title: item.snippet?.title ?? "",
+        description: item.snippet?.description ?? null,
+        publishedAt: item.snippet?.publishedAt ?? null,
+        thumbnailUrl: bestThumbnail(item.snippet?.thumbnails),
+        durationSec,
+        isShort: durationSec !== null && durationSec <= SHORTS_MAX_SECONDS,
+        embeddable: item.status?.embeddable !== false,
+      });
+    }
+  }
+
+  return found;
+}
+
 /** Canonical watch URL, stored so the admin can link back to the original. */
 export function watchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${videoId}`;

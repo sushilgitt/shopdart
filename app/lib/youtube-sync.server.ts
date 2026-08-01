@@ -3,6 +3,7 @@ import prisma from "../db.server";
 import {
   SHORTS_MAX_SECONDS,
   fetchUploads,
+  fetchVideosByIds,
   resolveChannel,
   watchUrl,
   type YouTubeVideo,
@@ -148,20 +149,8 @@ export async function importVideos(
     errors: [],
   };
 
-  // One pass over the channel to recover titles and thumbnails for the chosen
-  // ids, rather than a videos.list call per selection.
-  const wanted = new Set(videoIds);
-  const found = new Map<string, YouTubeVideo>();
-  let pageToken: string | undefined;
-
-  for (let page = 0; page < 10 && found.size < wanted.size; page += 1) {
-    const chunk = await fetchUploads(shop.ytUploadsPlaylistId, { pageToken });
-    for (const video of chunk.videos) {
-      if (wanted.has(video.id)) found.set(video.id, video);
-    }
-    if (!chunk.nextPageToken) break;
-    pageToken = chunk.nextPageToken;
-  }
+  // One unit per 50 videos, regardless of how far down the channel they sit.
+  const found = await fetchVideosByIds(videoIds);
 
   for (const videoId of videoIds) {
     const video = found.get(videoId);
