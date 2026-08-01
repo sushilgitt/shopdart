@@ -323,3 +323,23 @@
     transition: none;
   }
 }
+
+/* --- youtube embed ------------------------------------------------------ */
+
+/* The iframe replaces this element entirely once YT.Player mounts, so the
+   sizing has to live on the tile rather than on the node itself. */
+.shopdart__embed,
+.shopdart__tile--embed iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  z-index: 1;
+}
+
+/* YouTube renders its own controls, so the tile must not swallow the click
+   that reaches them. */
+.shopdart__tile--embed {
+  cursor: default;
+}

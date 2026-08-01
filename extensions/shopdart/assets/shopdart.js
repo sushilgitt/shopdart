@@ -266,7 +266,145 @@
     return wrap;
   }
 
+  // ------------------------------------------------------------- youtube ---
+
+  /**
+   * Loads YouTube's IFrame API once, and only when a YouTube tile actually
+   * exists on the page.
+   *
+   * This script is deliberately small; their API is not. Stores with no
+   * YouTube videos must pay nothing for the capability, which is why this is
+   * demand-loaded rather than a tag in the theme.
+   */
+  var ytApiPromise = null;
+
+  function loadYouTubeApi() {
+    if (ytApiPromise) return ytApiPromise;
+
+    ytApiPromise = new Promise(function (resolve) {
+      if (window.YT && window.YT.Player) return resolve(window.YT);
+
+      // The theme, or another app, may already be loading it. Chain onto the
+      // existing callback rather than clobbering it.
+      var previous = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = function () {
+        if (typeof previous === "function") previous();
+        resolve(window.YT);
+      };
+
+      if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+        var script = document.createElement("script");
+        script.src = "https://www.youtube.com/iframe_api";
+        script.async = true;
+        document.head.appendChild(script);
+      }
+    });
+
+    return ytApiPromise;
+  }
+
+  /**
+   * A tile backed by YouTube's embedded player.
+   *
+   * Shares the tile contract with the hosted path — _load, _play, _pause,
+   * _impression — so observe(), the layouts and the product card need no
+   * knowledge of which provider they are dealing with.
+   */
+  function buildYouTubeTile(video, config, shop, widget) {
+    var tile = el("div", "shopdart__tile shopdart__tile--embed", {
+      "aria-label": video.title || "Shoppable video",
+    });
+
+    if (video.poster) {
+      tile.appendChild(
+        el("img", "shopdart__media shopdart__poster", {
+          src: video.poster,
+          alt: "",
+          loading: "lazy",
+          decoding: "async",
+        })
+      );
+    }
+
+    var host = el("div", "shopdart__media shopdart__embed");
+    tile.appendChild(host);
+
+    var products = buildProducts(video, config, shop, widget);
+    if (products) tile.appendChild(products);
+
+    var player = null;
+    var wantsPlay = false;
+
+    tile._load = function () {
+      if (host.dataset.loaded) return;
+      host.dataset.loaded = "1";
+
+      loadYouTubeApi().then(function (YT) {
+        player = new YT.Player(host, {
+          videoId: video.embedId,
+          playerVars: {
+            // Autoplay only survives browser policy while muted, exactly as
+            // with the hosted path.
+            autoplay: wantsPlay ? 1 : 0,
+            mute: 1,
+            controls: 1,
+            playsinline: 1,
+            rel: 0,
+            loop: config.loop !== false ? 1 : 0,
+            // loop is ignored unless a playlist is named; a single-video
+            // playlist of itself is the documented workaround.
+            playlist: config.loop !== false ? video.embedId : undefined,
+          },
+          events: {
+            onReady: function (event) {
+              event.target.mute();
+              if (wantsPlay) event.target.playVideo();
+            },
+            onStateChange: function (event) {
+              if (event.data === YT.PlayerState.PLAYING) {
+                markViewed();
+              }
+              if (event.data === YT.PlayerState.ENDED) {
+                track(shop, "VIEW_COMPLETE", widget.id, video.id);
+              }
+            },
+          },
+        });
+      });
+    };
+
+    function markViewed() {
+      if (tile.dataset.viewed) return;
+      tile.dataset.viewed = "1";
+      track(shop, "VIEW_START", widget.id, video.id);
+    }
+
+    tile._play = function () {
+      wantsPlay = true;
+      tile._load();
+      if (player && player.playVideo) player.playVideo();
+      tile.dataset.playing = "true";
+    };
+
+    tile._pause = function () {
+      wantsPlay = false;
+      if (player && player.pauseVideo) player.pauseVideo();
+      tile.dataset.playing = "false";
+    };
+
+    return tile;
+  }
+
   function buildTile(video, config, shop, widget) {
+    // Payloads cached from before embeds existed carry no provider, and those
+    // are always hosted files.
+    if (video.provider === "youtube" && video.embedId) {
+      return buildYouTubeTile(video, config, shop, widget);
+    }
+    return buildHostedTile(video, config, shop, widget);
+  }
+
+  function buildHostedTile(video, config, shop, widget) {
     var tile = el("div", "shopdart__tile", {
       role: "button",
       tabindex: "0",

@@ -182,6 +182,11 @@ export interface YouTubeVideo {
   durationSec: number | null;
   /** Duration-based, because the API exposes no aspect ratio. Approximate. */
   isShort: boolean;
+  /**
+   * False when the creator disabled embedding. Such a video renders "Video
+   * unavailable" in the iframe player, so it must never reach a storefront.
+   */
+  embeddable: boolean;
 }
 
 interface PlaylistItemsResponse {
@@ -201,6 +206,7 @@ interface VideosResponse {
   items?: {
     id: string;
     contentDetails?: { duration?: string };
+    status?: { embeddable?: boolean; privacyStatus?: string };
   }[];
 }
 
@@ -270,15 +276,25 @@ export async function fetchUploads(
 
   const ids = items.map((item) => item.snippet!.resourceId!.videoId!);
 
+  // `status` matters as much as `contentDetails`: a creator can disable
+  // embedding on any video, including their own, and importing one renders
+  // "Video unavailable" on the storefront with nothing surfaced in the admin.
   const details = await ytFetch<VideosResponse>(
     "videos",
-    { part: "contentDetails", id: ids.join(",") },
+    { part: "contentDetails,status", id: ids.join(",") },
     cfg,
   );
   const durations = new Map(
     (details.items ?? []).map((item) => [
       item.id,
       parseIsoDuration(item.contentDetails?.duration),
+    ]),
+  );
+  const embeddable = new Map(
+    (details.items ?? []).map((item) => [
+      item.id,
+      // Absent means embeddable — only an explicit false disables it.
+      item.status?.embeddable !== false,
     ]),
   );
 
@@ -295,6 +311,7 @@ export async function fetchUploads(
       thumbnailUrl: bestThumbnail(snippet.thumbnails),
       durationSec,
       isShort: durationSec !== null && durationSec <= SHORTS_MAX_SECONDS,
+      embeddable: embeddable.get(id) !== false,
     };
   });
 

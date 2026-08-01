@@ -88,10 +88,13 @@ export async function browseUploads(
     pageToken: options.pageToken,
   });
 
-  const candidates =
+  const candidates = (
     options.shortsOnly === false
       ? page.videos
-      : page.videos.filter((video) => video.isShort);
+      : page.videos.filter((video) => video.isShort)
+    // Never offer a video the creator has blocked from embedding — it would
+    // publish a player reading "Video unavailable" to every shopper.
+  ).filter((video) => video.embeddable);
 
   if (candidates.length === 0) {
     return { videos: [], nextPageToken: page.nextPageToken };
