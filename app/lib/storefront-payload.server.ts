@@ -41,8 +41,19 @@ export interface StorefrontWidget {
 export interface StorefrontVideo {
   id: string;
   title: string;
+  /**
+   * Which player to use. `bunny` videos are files we host and play in a plain
+   * <video>; `youtube` videos are embedded in YouTube's iframe player, because
+   * their terms do not permit re-hosting the file.
+   *
+   * Older cached payloads predate this field, so the player must treat a
+   * missing value as `bunny`.
+   */
+  provider: "bunny" | "youtube";
+  /** Provider-side id — the YouTube video id. Null for hosted videos. */
+  embedId: string | null;
   poster: string | null;
-  /** Progressive MP4 — preferred for short clips. */
+  /** Progressive MP4 — preferred for short clips. Null for embeds. */
   mp4: string | null;
   /** HLS, used only for longer videos where ABR earns its bytes. */
   hls: string | null;
@@ -135,6 +146,11 @@ export async function buildStorefrontPayload(
           .map((entry) => ({
             id: entry.video.id,
             title: entry.video.title ?? "",
+            provider: (entry.video.source === "YOUTUBE"
+              ? "youtube"
+              : "bunny") as "bunny" | "youtube",
+            embedId:
+              entry.video.source === "YOUTUBE" ? entry.video.sourceRef : null,
             poster: entry.video.posterUrl,
             mp4: entry.video.mp4Url,
             hls: entry.video.hlsUrl,

@@ -84,6 +84,15 @@ model Shop {
   igTokenExpiresAt DateTime?
   igLastSyncedAt   DateTime?
 
+  // YouTube. Read-only over a server-side API key against the merchant's
+  // public channel — no OAuth, so there is no token to store or refresh.
+  ytChannelId    String?
+  ytChannelTitle String?
+  // Cached because resolving a handle costs an extra quota unit on every
+  // browse, and the mapping never changes for a given channel.
+  ytUploadsPlaylistId String?
+  ytLastSyncedAt      DateTime?
+
   videos  Video[]
   widgets Widget[]
   events  VideoEvent[]
