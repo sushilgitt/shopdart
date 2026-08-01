@@ -120,8 +120,9 @@ export default function Settings() {
       <s-section heading="Instagram">
         {instagramConnected ? (
           <s-paragraph>
-            Connected as <s-text type="strong">@{igUsername}</s-text>. New reels
-            sync automatically.
+            Connected as <s-text type="strong">@{igUsername}</s-text>. Import
+            new reels from the <s-link href="/app/instagram">Instagram</s-link>{" "}
+            tab.
           </s-paragraph>
         ) : (
           <s-paragraph>

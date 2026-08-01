@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 /**
  * Instagram API with Instagram Login.
  *
@@ -159,6 +161,60 @@ export async function refreshLongLivedToken(
     accessToken: data.access_token,
     expiresAt: new Date(Date.now() + data.expires_in * 1000),
   };
+}
+
+export interface SignedRequestPayload {
+  user_id: string;
+  algorithm: string;
+  issued_at: number;
+}
+
+/**
+ * Verifies the `signed_request` Meta posts to the deauthorize and data
+ * deletion callbacks.
+ *
+ * Format is `<base64url signature>.<base64url payload>`, where the signature
+ * is HMAC-SHA256 of the *encoded payload string* — not the decoded JSON — keyed
+ * on the app secret. Signing the decoded form produces a mismatch every time.
+ *
+ * These endpoints are public and unauthenticated by necessity: Meta calls them
+ * server-to-server with no session. The signature is the only thing standing
+ * between a stranger and wiping a merchant's Instagram connection.
+ */
+export function parseSignedRequest(
+  signedRequest: string,
+  config?: InstagramConfig,
+): SignedRequestPayload | null {
+  const cfg = config ?? instagramConfig();
+  const [encodedSignature, encodedPayload] = signedRequest.split(".");
+  if (!encodedSignature || !encodedPayload) return null;
+
+  const expected = createHmac("sha256", cfg.appSecret)
+    .update(encodedPayload)
+    .digest();
+  const provided = Buffer.from(encodedSignature, "base64url");
+
+  if (
+    expected.length !== provided.length ||
+    !timingSafeEqual(expected, provided)
+  ) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, "base64url").toString("utf8"),
+    ) as SignedRequestPayload;
+
+    // Meta documents only HMAC-SHA256. Refuse anything else rather than trust
+    // a payload that names an algorithm we did not just verify against.
+    if (payload.algorithm?.toUpperCase() !== "HMAC-SHA256") return null;
+    if (!payload.user_id) return null;
+
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 export interface InstagramProfile {

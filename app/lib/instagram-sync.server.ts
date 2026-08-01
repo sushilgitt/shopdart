@@ -8,7 +8,7 @@ import {
   refreshLongLivedToken,
   type InstagramMedia,
 } from "./instagram.server";
-import { PlanLimitError, assertCanAddVideo } from "./video.server";
+import { PlanLimitError, archiveVideo, assertCanAddVideo } from "./video.server";
 
 export class InstagramNotConnectedError extends Error {
   constructor() {
@@ -84,6 +84,9 @@ export async function browseReels(
       shopId: shop.id,
       source: VideoSource.INSTAGRAM,
       sourceRef: { in: reels.map((r) => r.id) },
+      // Archived reels are importable again, so they must not show as already
+      // imported — otherwise removing one hides it from this list for good.
+      archivedAt: null,
     },
     select: { sourceRef: true },
   });
@@ -129,7 +132,10 @@ export async function importReels(
         sourceRef: mediaId,
       },
     });
-    if (existing) {
+    // Only a *live* row means "already imported". An archived one is revived
+    // below rather than skipped — and it cannot simply be inserted again,
+    // because (shopId, source, sourceRef) is unique.
+    if (existing && !existing.archivedAt) {
       result.skipped += 1;
       continue;
     }
@@ -157,18 +163,42 @@ export async function importReels(
       const title = titleFromCaption(media.caption) || "Instagram reel";
       const bunny = await createBunnyVideo(title);
 
-      await prisma.video.create({
-        data: {
-          shopId: shop.id,
-          source: VideoSource.INSTAGRAM,
-          sourceRef: media.id,
-          sourceUrl: media.permalink,
-          title,
-          caption: media.caption,
-          bunnyVideoId: bunny.guid,
-          status: VideoStatus.PROCESSING,
-        },
-      });
+      const fields = {
+        sourceUrl: media.permalink,
+        title,
+        caption: media.caption,
+        bunnyVideoId: bunny.guid,
+        status: VideoStatus.PROCESSING,
+      };
+
+      if (existing) {
+        // Revive the archived row and clear everything derived from the old
+        // Bunny asset, which was deleted when the merchant removed it.
+        await prisma.video.update({
+          where: { id: existing.id },
+          data: {
+            ...fields,
+            archivedAt: null,
+            errorMessage: null,
+            posterUrl: null,
+            mp4Url: null,
+            hlsUrl: null,
+            durationSec: null,
+            width: null,
+            height: null,
+            sizeBytes: null,
+          },
+        });
+      } else {
+        await prisma.video.create({
+          data: {
+            shopId: shop.id,
+            source: VideoSource.INSTAGRAM,
+            sourceRef: media.id,
+            ...fields,
+          },
+        });
+      }
 
       // Bunny pulls the file itself. Fired after the row exists so the
       // transcode webhook always finds something to update.
@@ -201,6 +231,52 @@ export async function disconnectInstagram(shopId: string): Promise<void> {
       igLastSyncedAt: null,
     },
   });
+}
+
+/**
+ * Erases everything derived from an Instagram account, for the data deletion
+ * callback Meta requires.
+ *
+ * Goes further than `disconnectInstagram`: the imported reels are copies of
+ * that account's content, so a deletion request has to take them too. They are
+ * archived rather than row-deleted so historical analytics still resolve, and
+ * the Bunny asset is removed outright because that is where the actual video
+ * lives.
+ *
+ * Returns the shops affected — a single Instagram account can legitimately be
+ * connected to more than one store.
+ */
+export async function deleteInstagramData(
+  igUserId: string,
+): Promise<{ shops: number; videos: number }> {
+  const shops = await prisma.shop.findMany({
+    where: { igUserId },
+    select: { id: true },
+  });
+  if (shops.length === 0) return { shops: 0, videos: 0 };
+
+  let videos = 0;
+
+  for (const shop of shops) {
+    const imported = await prisma.video.findMany({
+      where: {
+        shopId: shop.id,
+        source: VideoSource.INSTAGRAM,
+        archivedAt: null,
+      },
+      select: { id: true },
+    });
+
+    for (const video of imported) {
+      // Removes the Bunny asset as well as archiving locally.
+      await archiveVideo(shop.id, video.id);
+      videos += 1;
+    }
+
+    await disconnectInstagram(shop.id);
+  }
+
+  return { shops: shops.length, videos };
 }
 
 /**
