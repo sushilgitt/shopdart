@@ -189,6 +189,14 @@ model ProductTag {
   priceAmount  Decimal? @db.Decimal(12, 2)
   currencyCode String?
 
+  // Cached variants, so the player can offer a size/colour picker without an
+  // Admin API call. Shape: [{ id, title, price, available }].
+  //
+  // Without this, any product with more than one variant degrades to a link
+  // out to the product page — which is most real products, and defeats the
+  // point of a shoppable video.
+  variants Json?
+
   startSec Float? @default(0)
   endSec   Float?
   position Int    @default(0)

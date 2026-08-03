@@ -233,20 +233,69 @@
       }
       card.appendChild(text);
 
+      // Variants a shopper can actually buy. Sold-out ones are dropped rather
+      // than shown disabled: a picker of unbuyable options reads as broken.
+      var buyable = (product.variants || []).filter(function (variant) {
+        return variant && variant.id && variant.available !== false;
+      });
+
+      function buy(variantId, button) {
+        track(shop, "PRODUCT_CLICK", widget.id, video.id, product.id);
+        addToCart(variantId, button, function () {
+          stampCart(video.id, widget.id);
+          track(shop, "ADD_TO_CART", widget.id, video.id, product.id);
+          flush(shop);
+        });
+      }
+
       if (product.variantId) {
         var button = el("button", "shopdart__cta", { type: "button" });
         button.textContent = config.ctaLabel || "Shop now";
         button.addEventListener("click", function (event) {
           event.stopPropagation();
           event.preventDefault();
-          track(shop, "PRODUCT_CLICK", widget.id, video.id, product.id);
-          addToCart(product.variantId, button, function () {
-            stampCart(video.id, widget.id);
-            track(shop, "ADD_TO_CART", widget.id, video.id, product.id);
-            flush(shop);
-          });
+          buy(product.variantId, button);
         });
         card.appendChild(button);
+      } else if (buyable.length > 1) {
+        // The common case for real catalogues. Sending these shoppers to the
+        // product page is what stops a "shoppable" video being shoppable, so
+        // the choice happens here instead.
+        var select = el("select", "shopdart__variants", {
+          "aria-label": "Choose an option",
+        });
+        buyable.forEach(function (variant) {
+          var option = el("option", null, { value: variant.id });
+          option.textContent =
+            variant.price !== null && variant.price !== undefined
+              ? variant.title + " — " + money(variant.price)
+              : variant.title;
+          select.appendChild(option);
+        });
+        // The select and its button sit inside a tile that toggles playback on
+        // click; without this, choosing a size pauses the video.
+        select.addEventListener("click", function (event) {
+          event.stopPropagation();
+        });
+        card.appendChild(select);
+
+        var pickerButton = el("button", "shopdart__cta", { type: "button" });
+        pickerButton.textContent = config.ctaLabel || "Shop now";
+        pickerButton.addEventListener("click", function (event) {
+          event.stopPropagation();
+          event.preventDefault();
+          buy(select.value, pickerButton);
+        });
+        card.appendChild(pickerButton);
+      } else if (buyable.length === 1) {
+        var soleButton = el("button", "shopdart__cta", { type: "button" });
+        soleButton.textContent = config.ctaLabel || "Shop now";
+        soleButton.addEventListener("click", function (event) {
+          event.stopPropagation();
+          event.preventDefault();
+          buy(buyable[0].id, soleButton);
+        });
+        card.appendChild(soleButton);
       } else if (product.handle) {
         // Multi-variant products need the shopper to choose, so send them to
         // the product page rather than guessing a size for them.

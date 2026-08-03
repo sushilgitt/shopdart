@@ -10,6 +10,55 @@ import prisma from "../db.server";
  * see. It's kept current by the products/update webhook.
  */
 
+/**
+ * A variant as cached on the tag and published to the storefront.
+ *
+ * `id` is the numeric variant id, not the gid — the Ajax cart API wants the
+ * bare number, and converting it here means the player never has to.
+ */
+export interface CachedVariant {
+  id: string;
+  title: string;
+  price: number | null;
+  available: boolean;
+}
+
+/**
+ * Upper bound on cached variants per product.
+ *
+ * Shopify allows far more, but this JSON rides in a document every shopper
+ * downloads. A picker with hundreds of entries is unusable anyway, so the
+ * payload cost buys nothing past this point.
+ */
+const MAX_VARIANTS = 50;
+
+function numericId(gid?: string | null): string | null {
+  if (!gid) return null;
+  const tail = gid.split("/").pop();
+  return tail && /^\d+$/.test(tail) ? tail : null;
+}
+
+function toCachedVariants(
+  variants: PickedProduct["variants"],
+): CachedVariant[] {
+  return (variants ?? [])
+    .map((variant) => {
+      const id = numericId(variant.id);
+      if (!id) return null;
+      const price = variant.price ? Number(variant.price) : null;
+      return {
+        id,
+        title: variant.title ?? "",
+        price: price !== null && Number.isFinite(price) ? price : null,
+        // Absent means available: the picker treats only an explicit false as
+        // sold out, so a missing field never hides a buyable variant.
+        available: variant.availableForSale !== false,
+      } satisfies CachedVariant;
+    })
+    .filter((variant): variant is CachedVariant => variant !== null)
+    .slice(0, MAX_VARIANTS);
+}
+
 /** Shape returned by the App Bridge resource picker for a product. */
 export interface PickedProduct {
   id: string;
@@ -55,7 +104,8 @@ export async function tagProducts(
         productGid: product.id,
         // Only pin a variant when the product has exactly one — otherwise the
         // shopper should choose, and pre-selecting silently sells the wrong
-        // size.
+        // size. Multi-variant products are handled by the in-player picker,
+        // built from the cached list below.
         variantGid:
           product.variants?.length === 1 ? (variant?.id ?? null) : null,
         handle: product.handle ?? null,
@@ -65,6 +115,9 @@ export async function tagProducts(
           price !== null && Number.isFinite(price)
             ? new Prisma.Decimal(price)
             : null,
+        variants: toCachedVariants(
+          product.variants,
+        ) as unknown as Prisma.InputJsonValue,
         position: start + index,
       };
     });
@@ -139,6 +192,7 @@ export async function refreshCachedProduct(
     handle?: string | null;
     imageUrl?: string | null;
     priceAmount?: number | null;
+    variants?: CachedVariant[];
   },
 ): Promise<number> {
   const patch: Prisma.ProductTagUpdateManyMutationInput = {};
@@ -148,6 +202,11 @@ export async function refreshCachedProduct(
   if (data.priceAmount !== undefined) {
     patch.priceAmount =
       data.priceAmount === null ? null : new Prisma.Decimal(data.priceAmount);
+  }
+  if (data.variants !== undefined) {
+    // Keeps the picker honest: a variant sold out or deleted since tagging
+    // would otherwise stay buyable in the player until someone re-tagged it.
+    patch.variants = data.variants as unknown as Prisma.InputJsonValue;
   }
   if (Object.keys(patch).length === 0) return 0;
 

@@ -343,3 +343,26 @@
 .shopdart__tile--embed {
   cursor: default;
 }
+
+/* --- variant picker ----------------------------------------------------- */
+
+/* Sits between the product text and the CTA. Deliberately a native <select>:
+   it is keyboard and screen-reader correct for free, renders as the platform
+   wheel on mobile, and cannot be clipped by the tile's overflow the way a
+   custom dropdown would be. */
+.shopdart__variants {
+  font: inherit;
+  font-size: 12px;
+  max-width: 44%;
+  padding: 5px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: calc(var(--shopdart-radius) / 2);
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.shopdart__variants:focus-visible {
+  outline: 2px solid var(--shopdart-accent);
+  outline-offset: 1px;
+}

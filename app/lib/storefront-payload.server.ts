@@ -63,10 +63,24 @@ export interface StorefrontVideo {
   products: StorefrontProduct[];
 }
 
+export interface StorefrontVariant {
+  /** Numeric variant id, ready for the Cart Ajax API. */
+  id: string;
+  title: string;
+  price: number | null;
+  available: boolean;
+}
+
 export interface StorefrontProduct {
   id: string;
   /** Numeric variant id, ready for the Cart Ajax API. Null when the shopper must choose. */
   variantId: string | null;
+  /**
+   * Every buyable variant, so the player can offer a picker in place of
+   * sending the shopper to the product page. Empty for tags created before
+   * variants were cached — the player falls back to a link in that case.
+   */
+  variants: StorefrontVariant[];
   handle: string | null;
   title: string;
   image: string | null;
@@ -163,6 +177,11 @@ export async function buildStorefrontPayload(
               variantId: tag.variantGid
                 ? tag.variantGid.split("/").pop() ?? null
                 : null,
+              variants: Array.isArray(tag.variants)
+                ? (tag.variants as unknown as StorefrontVariant[]).filter(
+                    (variant) => variant?.id,
+                  )
+                : [],
               handle: tag.handle,
               title: tag.title ?? "",
               image: tag.imageUrl,

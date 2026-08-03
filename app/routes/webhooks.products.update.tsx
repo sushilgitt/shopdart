@@ -8,7 +8,32 @@ interface ProductWebhookPayload {
   handle?: string;
   image?: { src?: string } | null;
   images?: { src?: string }[];
-  variants?: { price?: string }[];
+  variants?: {
+    id?: number;
+    title?: string;
+    price?: string;
+    inventory_quantity?: number;
+    inventory_management?: string | null;
+    inventory_policy?: string;
+  }[];
+}
+
+/**
+ * Whether a variant can still be bought.
+ *
+ * Webhooks carry raw inventory fields rather than a boolean. Untracked
+ * inventory and "continue" (oversell allowed) are both buyable regardless of
+ * the count, so treating quantity alone as the signal would wrongly hide
+ * variants merchants are happy to sell.
+ */
+function isAvailable(variant: {
+  inventory_quantity?: number;
+  inventory_management?: string | null;
+  inventory_policy?: string;
+}): boolean {
+  if (!variant.inventory_management) return true;
+  if (variant.inventory_policy === "continue") return true;
+  return (variant.inventory_quantity ?? 0) > 0;
 }
 
 /**
@@ -39,6 +64,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Show the lowest variant price — the "from" figure a shopper expects on a
     // product card.
     priceAmount: prices.length > 0 ? Math.min(...prices) : null,
+    variants: (product.variants ?? [])
+      .filter((variant) => variant.id)
+      .map((variant) => {
+        const price = Number(variant.price);
+        return {
+          id: String(variant.id),
+          title: variant.title ?? "",
+          price: Number.isFinite(price) ? price : null,
+          available: isAvailable(variant),
+        };
+      })
+      .slice(0, 50),
   });
 
   if (updated > 0) {
