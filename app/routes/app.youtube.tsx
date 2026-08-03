@@ -19,9 +19,12 @@ import {
   YouTubeNotConnectedError,
   YouTubeNotVerifiedError,
   type BrowsableYouTubeVideo,
+  beginChannelClaim,
   browseUploads,
   disconnectYouTube,
   importVideos,
+  verificationCodeFor,
+  verifyChannelByDescription,
 } from "../lib/youtube-sync.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -32,17 +35,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const pageToken = url.searchParams.get("pageToken") ?? undefined;
   const shortsOnly = url.searchParams.get("all") !== "1";
 
-  // Both are needed: the key reads public video data, OAuth proves the channel
-  // belongs to this merchant.
-  const configured = isYouTubeConfigured() && isGoogleOAuthConfigured();
-  const connected = Boolean(
-    shop.ytChannelId && shop.ytUploadsPlaylistId && shop.ytVerifiedAt,
-  );
+  // The API key is what reads video data, so it alone decides whether the
+  // feature is usable at all. Google OAuth is an optional second route to
+  // proving ownership.
+  const configured = isYouTubeConfigured();
+  const googleAvailable = isGoogleOAuthConfigured();
+  const claimed = Boolean(shop.ytChannelId && shop.ytUploadsPlaylistId);
+  const connected = claimed && Boolean(shop.ytVerifiedAt);
 
   if (!configured || !connected) {
     return {
       configured,
+      googleAvailable,
       connected: false as const,
+      // A claimed-but-unverified channel is mid-verification: show the code.
+      pending:
+        claimed && shop.ytChannelId
+          ? {
+              title: shop.ytChannelTitle,
+              code: verificationCodeFor(shop.id, shop.ytChannelId),
+            }
+          : null,
       channelTitle: null,
       shortsOnly,
       videos: [] as BrowsableYouTubeVideo[],
@@ -74,7 +87,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     configured,
+    googleAvailable,
     connected: true as const,
+    pending: null,
     channelTitle: shop.ytChannelTitle,
     shortsOnly,
     videos,
@@ -99,6 +114,50 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         ok: false as const,
         error: "YouTube isn't configured yet. Add your Google OAuth credentials.",
       };
+    }
+  }
+
+  if (intent === "claim") {
+    const input = String(form.get("channel") ?? "").trim();
+    if (!input) {
+      return { ok: false as const, error: "Enter your channel handle." };
+    }
+    try {
+      const claim = await beginChannelClaim(shop, input);
+      if (!claim) {
+        return {
+          ok: false as const,
+          error:
+            "Couldn't find that channel. Use your @handle, e.g. @yourbrand, or the full channel URL.",
+        };
+      }
+      return { ok: true as const, claimed: claim.title };
+    } catch (error) {
+      if (error instanceof YouTubeQuotaError) {
+        return { ok: false as const, error: error.message };
+      }
+      console.error("beginChannelClaim failed", error);
+      return { ok: false as const, error: "Could not reach YouTube." };
+    }
+  }
+
+  if (intent === "verify") {
+    try {
+      const verified = await verifyChannelByDescription(shop);
+      if (!verified) {
+        return {
+          ok: false as const,
+          error:
+            "We couldn't find the code in your channel description yet. Publish the change on YouTube, wait a moment, then try again.",
+        };
+      }
+      return { ok: true as const, verified: true };
+    } catch (error) {
+      if (error instanceof YouTubeQuotaError) {
+        return { ok: false as const, error: error.message };
+      }
+      console.error("verifyChannelByDescription failed", error);
+      return { ok: false as const, error: "Could not check your channel." };
     }
   }
 
@@ -130,7 +189,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function YouTube() {
   const {
     configured,
+    googleAvailable,
     connected,
+    pending,
     channelTitle,
     shortsOnly,
     videos,
@@ -200,25 +261,83 @@ export default function YouTube() {
         </s-section>
       )}
 
-      {configured && !connected && (
+      {configured && !connected && !pending && (
         <s-section heading="Connect your YouTube channel">
           <s-paragraph>
-            Sign in with the Google account that owns your channel. Google
-            confirms which channels are yours, so only those can be connected.
+            Enter the handle of a channel you own. You&rsquo;ll then confirm
+            it&rsquo;s yours by adding a short code to your channel description
+            — the same way domain ownership is verified.
           </s-paragraph>
           <s-paragraph>
             <s-text color="subdued">
-              Shopdart asks for read-only access, uses it once to confirm
-              ownership, then discards it. It never posts, comments or changes
-              anything on your channel.
+              Shopdart only ever reads your public videos. It never posts,
+              comments or changes anything on your channel.
             </s-text>
           </s-paragraph>
           <fetcher.Form method="post">
-            <input type="hidden" name="intent" value="connect" />
-            <s-button type="submit" {...(busy ? { loading: true } : {})}>
-              Connect with Google
-            </s-button>
+            <input type="hidden" name="intent" value="claim" />
+            <s-stack direction="block" gap="base">
+              <s-text-field
+                name="channel"
+                label="Channel handle"
+                placeholder="@yourbrand"
+              />
+              <s-button type="submit" {...(busy ? { loading: true } : {})}>
+                Continue
+              </s-button>
+            </s-stack>
           </fetcher.Form>
+
+          {googleAvailable && (
+            <>
+              <s-paragraph>
+                <s-text color="subdued">
+                  Or skip the code and let Google confirm it for you:
+                </s-text>
+              </s-paragraph>
+              <fetcher.Form method="post">
+                <input type="hidden" name="intent" value="connect" />
+                <s-button type="submit" variant="secondary">
+                  Connect with Google
+                </s-button>
+              </fetcher.Form>
+            </>
+          )}
+        </s-section>
+      )}
+
+      {configured && !connected && pending && (
+        <s-section heading="Confirm you own this channel">
+          <s-paragraph>
+            Add this code anywhere in{" "}
+            <s-text type="strong">{pending.title}</s-text>&rsquo;s channel
+            description, then come back and verify. You can delete it
+            afterwards.
+          </s-paragraph>
+          <s-box padding="base" borderWidth="base" borderRadius="base">
+            <s-text type="strong">{pending.code}</s-text>
+          </s-box>
+          <s-paragraph>
+            <s-text color="subdued">
+              In YouTube Studio: Customisation &rarr; Basic info &rarr;
+              Description &rarr; Publish. Only someone who can edit the channel
+              can do this, which is what proves it&rsquo;s yours.
+            </s-text>
+          </s-paragraph>
+          <s-stack direction="inline" gap="base" alignItems="center">
+            <fetcher.Form method="post">
+              <input type="hidden" name="intent" value="verify" />
+              <s-button type="submit" {...(busy ? { loading: true } : {})}>
+                I&rsquo;ve added the code — verify
+              </s-button>
+            </fetcher.Form>
+            <fetcher.Form method="post">
+              <input type="hidden" name="intent" value="disconnect" />
+              <s-button type="submit" variant="tertiary">
+                Use a different channel
+              </s-button>
+            </fetcher.Form>
+          </s-stack>
         </s-section>
       )}
 
@@ -347,7 +466,7 @@ export default function YouTube() {
             <s-text type="strong">{channelTitle}</s-text>
           </s-paragraph>
           <s-paragraph>
-            <s-text color="subdued">Ownership verified with Google.</s-text>
+            <s-text color="subdued">Ownership verified.</s-text>
           </s-paragraph>
           <s-paragraph>
             <s-text color="subdued">

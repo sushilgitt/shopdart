@@ -2,11 +2,14 @@ import { VideoSource, VideoStatus, type Shop } from "@prisma/client";
 import prisma from "../db.server";
 import {
   SHORTS_MAX_SECONDS,
+  fetchChannelById,
   fetchUploads,
   fetchVideosByIds,
+  resolveChannel,
   watchUrl,
   type YouTubeVideo,
 } from "./youtube.server";
+import { deriveCode } from "./crypto.server";
 import { PlanLimitError, assertCanAddVideo } from "./video.server";
 
 export class YouTubeNotConnectedError extends Error {
@@ -51,11 +54,87 @@ function assertVerified(shop: Shop): string {
  */
 
 /**
+ * The code a merchant puts in their channel description to prove control.
+ *
+ * Deterministic per (shop, channel), so a pending claim needs no stored row
+ * and cannot expire halfway through. Derived from the app key, so it cannot be
+ * guessed by someone who merely knows the shop and channel ids.
+ */
+export function verificationCodeFor(shopId: string, channelId: string): string {
+  return `shopdart-verify-${deriveCode(`yt:${shopId}:${channelId}`)}`;
+}
+
+/**
+ * Records a claim on a channel — explicitly NOT proof of ownership.
+ *
+ * Anyone can name any channel, so this writes the channel without
+ * `ytVerifiedAt`. Browsing and importing stay closed until either the
+ * description check or the Google OAuth path sets it.
+ */
+export async function beginChannelClaim(
+  shop: Shop,
+  input: string,
+): Promise<{ channelId: string; title: string; code: string } | null> {
+  const channel = await resolveChannel(input);
+  if (!channel) return null;
+
+  await prisma.shop.update({
+    where: { id: shop.id },
+    data: {
+      ytChannelId: channel.id,
+      ytChannelTitle: channel.title,
+      ytUploadsPlaylistId: channel.uploadsPlaylistId,
+      // A fresh claim is unverified even if a previous channel was verified.
+      ytVerifiedAt: null,
+    },
+  });
+
+  return {
+    channelId: channel.id,
+    title: channel.title,
+    code: verificationCodeFor(shop.id, channel.id),
+  };
+}
+
+/**
+ * Confirms the claim by finding the code in the channel's description.
+ *
+ * Publishing a description change requires owner or manager access in YouTube
+ * Studio, so a stranger cannot pass this — the same reasoning behind DNS TXT
+ * records for domain ownership. It proves control at this moment rather than
+ * forever, which is the accepted limitation of the pattern.
+ */
+export async function verifyChannelByDescription(
+  shop: Shop,
+): Promise<boolean> {
+  if (!shop.ytChannelId) throw new YouTubeNotConnectedError();
+
+  const channel = await fetchChannelById(shop.ytChannelId);
+  if (!channel) return false;
+
+  const code = verificationCodeFor(shop.id, shop.ytChannelId);
+  if (!channel.description.includes(code)) return false;
+
+  await prisma.shop.update({
+    where: { id: shop.id },
+    data: {
+      // Refresh these too: the claim may have been made some time ago.
+      ytChannelTitle: channel.title,
+      ytUploadsPlaylistId: channel.uploadsPlaylistId,
+      ytVerifiedAt: new Date(),
+    },
+  });
+
+  return true;
+}
+
+/**
  * Attaches a channel Google has confirmed the merchant owns.
  *
- * There is deliberately no way to attach a channel by name. The only caller is
- * the OAuth callback, which receives the channel list straight from
- * `channels.list?mine=true`.
+ * The OAuth path — kept alongside the description check so it can become the
+ * primary flow once Google's verification review is granted. Its caller
+ * receives the channel list straight from `channels.list?mine=true`, so there
+ * is nothing further to prove.
  */
 export async function attachVerifiedChannel(
   shopId: string,

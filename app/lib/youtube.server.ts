@@ -84,6 +84,116 @@ async function ytFetch<T>(
 }
 
 // ---------------------------------------------------------------------------
+// Channels
+// ---------------------------------------------------------------------------
+
+export interface YouTubeChannel {
+  id: string;
+  title: string;
+  uploadsPlaylistId: string;
+  thumbnailUrl: string | null;
+  /** The About text. Carries the verification code during a claim. */
+  description: string;
+}
+
+interface ChannelsResponse {
+  items?: {
+    id: string;
+    snippet?: {
+      title?: string;
+      description?: string;
+      thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
+    };
+    contentDetails?: { relatedPlaylists?: { uploads?: string } };
+  }[];
+}
+
+/**
+ * Normalises whatever the merchant pasted into something channels.list accepts.
+ *
+ * Legacy `/c/CustomName` and `/user/Name` URLs are deliberately unsupported:
+ * resolving those needs search.list at 100 units a call, and the modern
+ * @handle appears on every channel page anyway.
+ */
+function parseChannelInput(raw: string): { handle?: string; id?: string } | null {
+  const input = raw.trim();
+  if (!input) return null;
+
+  if (/^UC[\w-]{20,}$/.test(input)) return { id: input };
+
+  if (/^@?[\w.-]{3,30}$/.test(input) && !input.includes("/")) {
+    return { handle: input.startsWith("@") ? input : `@${input}` };
+  }
+
+  try {
+    const url = new URL(input.includes("://") ? input : `https://${input}`);
+    if (!/(^|\.)youtube\.com$/.test(url.hostname)) return null;
+
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (segments[0]?.startsWith("@")) return { handle: segments[0] };
+    if (segments[0] === "channel" && segments[1]) return { id: segments[1] };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Looks up a public channel.
+ *
+ * Resolving a channel is NOT the same as owning it — anyone can look up
+ * anyone. Callers must treat the result as an unverified claim until either
+ * Google confirms ownership via OAuth, or the verification code is found in
+ * the description. See youtube-sync.server.ts, where that gate lives.
+ */
+export async function resolveChannel(
+  input: string,
+  config?: YouTubeConfig,
+): Promise<YouTubeChannel | null> {
+  const parsed = parseChannelInput(input);
+  if (!parsed) return null;
+
+  return fetchChannel(
+    parsed.id ? { id: parsed.id } : { forHandle: parsed.handle! },
+    config,
+  );
+}
+
+/** Re-reads a channel by id — used to check the description during a claim. */
+export async function fetchChannelById(
+  channelId: string,
+  config?: YouTubeConfig,
+): Promise<YouTubeChannel | null> {
+  return fetchChannel({ id: channelId }, config);
+}
+
+async function fetchChannel(
+  selector: Record<string, string>,
+  config?: YouTubeConfig,
+): Promise<YouTubeChannel | null> {
+  const data = await ytFetch<ChannelsResponse>(
+    "channels",
+    { part: "snippet,contentDetails", ...selector },
+    config,
+  );
+
+  const item = data.items?.[0];
+  const uploads = item?.contentDetails?.relatedPlaylists?.uploads;
+  if (!item || !uploads) return null;
+
+  return {
+    id: item.id,
+    title: item.snippet?.title ?? "",
+    uploadsPlaylistId: uploads,
+    thumbnailUrl:
+      item.snippet?.thumbnails?.medium?.url ??
+      item.snippet?.thumbnails?.default?.url ??
+      null,
+    description: item.snippet?.description ?? "",
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Videos
 // ---------------------------------------------------------------------------
 

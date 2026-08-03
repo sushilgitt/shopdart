@@ -73,6 +73,18 @@ export function decrypt(payload: string): string {
   ]).toString("utf8");
 }
 
+/**
+ * Short, unguessable code derived from the app key.
+ *
+ * Deterministic on purpose: the same input always yields the same code, so a
+ * pending verification needs no database row and cannot go stale. Derived from
+ * the key rather than hashed plainly so it cannot be computed by anyone who
+ * merely knows the inputs.
+ */
+export function deriveCode(input: string, length = 12): string {
+  return createHmac("sha256", key()).update(input).digest("hex").slice(0, length);
+}
+
 // ---------------------------------------------------------------------------
 // Signed state, for OAuth round-trips
 // ---------------------------------------------------------------------------
