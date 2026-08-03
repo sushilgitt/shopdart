@@ -1,11 +1,14 @@
 /**
  * YouTube Data API v3 client.
  *
- * Read-only over a server-side API key against public channels. Deliberately
- * not OAuth: listing a merchant's own uploads needs no user consent, which
- * avoids Google's verification review and any per-merchant token to store,
- * encrypt or refresh. OAuth only becomes necessary for private or unlisted
- * videos, which merchants would not put on a storefront anyway.
+ * Read-only over a server-side API key against public channel data.
+ *
+ * Ownership is NOT established here — this module can read any public channel
+ * and has no notion of who is asking. Proving that a channel belongs to the
+ * merchant is done once, via OAuth, in youtube-oauth.server.ts, and every
+ * caller in youtube-sync.server.ts is gated on that having happened. There is
+ * deliberately no "resolve a channel by handle" function: it would be an
+ * obvious way to attach a channel without passing the gate.
  *
  * QUOTA IS THE BINDING CONSTRAINT. The default allowance is 10,000 units per
  * day for the whole app, across every merchant — not per shop. Costs:
@@ -78,94 +81,6 @@ async function ytFetch<T>(
   }
 
   return (await response.json()) as T;
-}
-
-// ---------------------------------------------------------------------------
-// Channels
-// ---------------------------------------------------------------------------
-
-export interface YouTubeChannel {
-  id: string;
-  title: string;
-  /** The auto-generated playlist holding every public upload. */
-  uploadsPlaylistId: string;
-  thumbnailUrl: string | null;
-}
-
-interface ChannelsResponse {
-  items?: {
-    id: string;
-    snippet?: {
-      title?: string;
-      thumbnails?: { medium?: { url?: string }; default?: { url?: string } };
-    };
-    contentDetails?: { relatedPlaylists?: { uploads?: string } };
-  }[];
-}
-
-/**
- * Normalises whatever the merchant pasted into something channels.list accepts.
- *
- * Legacy `/c/CustomName` and `/user/Name` URLs are deliberately not handled:
- * resolving those requires search.list at 100 units a go, and the modern
- * @handle is shown on every channel page anyway.
- */
-function parseChannelInput(raw: string): { handle?: string; id?: string } | null {
-  const input = raw.trim();
-  if (!input) return null;
-
-  // Bare channel id.
-  if (/^UC[\w-]{20,}$/.test(input)) return { id: input };
-
-  // Bare handle, with or without the @.
-  if (/^@?[\w.-]{3,30}$/.test(input) && !input.includes("/")) {
-    return { handle: input.startsWith("@") ? input : `@${input}` };
-  }
-
-  try {
-    const url = new URL(input.includes("://") ? input : `https://${input}`);
-    if (!/(^|\.)youtube\.com$/.test(url.hostname)) return null;
-
-    const handleSegment = url.pathname.split("/").filter(Boolean);
-    if (handleSegment[0]?.startsWith("@")) return { handle: handleSegment[0] };
-    if (handleSegment[0] === "channel" && handleSegment[1]) {
-      return { id: handleSegment[1] };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-export async function resolveChannel(
-  input: string,
-  config?: YouTubeConfig,
-): Promise<YouTubeChannel | null> {
-  const parsed = parseChannelInput(input);
-  if (!parsed) return null;
-
-  const data = await ytFetch<ChannelsResponse>(
-    "channels",
-    {
-      part: "snippet,contentDetails",
-      ...(parsed.id ? { id: parsed.id } : { forHandle: parsed.handle! }),
-    },
-    config,
-  );
-
-  const item = data.items?.[0];
-  const uploads = item?.contentDetails?.relatedPlaylists?.uploads;
-  if (!item || !uploads) return null;
-
-  return {
-    id: item.id,
-    title: item.snippet?.title ?? "",
-    uploadsPlaylistId: uploads,
-    thumbnailUrl:
-      item.snippet?.thumbnails?.medium?.url ??
-      item.snippet?.thumbnails?.default?.url ??
-      null,
-  };
 }
 
 // ---------------------------------------------------------------------------

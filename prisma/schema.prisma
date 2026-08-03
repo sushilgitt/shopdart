@@ -92,6 +92,10 @@ model Shop {
   // browse, and the mapping never changes for a given channel.
   ytUploadsPlaylistId String?
   ytLastSyncedAt      DateTime?
+  // Set once Google has confirmed the merchant owns this channel, via a
+  // one-time OAuth grant. Browsing and importing refuse to run without it, so
+  // a channel can never be attached by simply naming it.
+  ytVerifiedAt        DateTime?
 
   videos  Video[]
   widgets Widget[]

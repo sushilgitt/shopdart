@@ -4,7 +4,6 @@ import {
   SHORTS_MAX_SECONDS,
   fetchUploads,
   fetchVideosByIds,
-  resolveChannel,
   watchUrl,
   type YouTubeVideo,
 } from "./youtube.server";
@@ -15,6 +14,27 @@ export class YouTubeNotConnectedError extends Error {
     super("This store has not connected a YouTube channel.");
     this.name = "YouTubeNotConnectedError";
   }
+}
+
+export class YouTubeNotVerifiedError extends Error {
+  constructor() {
+    super("This channel has not been verified as yours.");
+    this.name = "YouTubeNotVerifiedError";
+  }
+}
+
+/**
+ * Guards every read of a merchant's channel.
+ *
+ * Verification is checked here rather than at the route, so no future caller
+ * can reach the channel without going through the ownership gate.
+ */
+function assertVerified(shop: Shop): string {
+  if (!shop.ytChannelId || !shop.ytUploadsPlaylistId) {
+    throw new YouTubeNotConnectedError();
+  }
+  if (!shop.ytVerifiedAt) throw new YouTubeNotVerifiedError();
+  return shop.ytUploadsPlaylistId;
 }
 
 /**
@@ -30,29 +50,26 @@ export class YouTubeNotConnectedError extends Error {
  *    so nothing expires and nothing needs refreshing.
  */
 
-export interface ConnectResult {
-  channelId: string;
-  title: string;
-}
-
-/** Resolves a pasted handle or URL and stores it against the shop. */
-export async function connectChannel(
-  shop: Shop,
-  input: string,
-): Promise<ConnectResult | null> {
-  const channel = await resolveChannel(input);
-  if (!channel) return null;
-
+/**
+ * Attaches a channel Google has confirmed the merchant owns.
+ *
+ * There is deliberately no way to attach a channel by name. The only caller is
+ * the OAuth callback, which receives the channel list straight from
+ * `channels.list?mine=true`.
+ */
+export async function attachVerifiedChannel(
+  shopId: string,
+  channel: { id: string; title: string; uploadsPlaylistId: string },
+): Promise<void> {
   await prisma.shop.update({
-    where: { id: shop.id },
+    where: { id: shopId },
     data: {
       ytChannelId: channel.id,
       ytChannelTitle: channel.title,
       ytUploadsPlaylistId: channel.uploadsPlaylistId,
+      ytVerifiedAt: new Date(),
     },
   });
-
-  return { channelId: channel.id, title: channel.title };
 }
 
 export async function disconnectYouTube(shopId: string): Promise<void> {
@@ -63,6 +80,7 @@ export async function disconnectYouTube(shopId: string): Promise<void> {
       ytChannelTitle: null,
       ytUploadsPlaylistId: null,
       ytLastSyncedAt: null,
+      ytVerifiedAt: null,
     },
   });
 }
@@ -83,9 +101,9 @@ export async function browseUploads(
   shop: Shop,
   options: { pageToken?: string; shortsOnly?: boolean } = {},
 ): Promise<{ videos: BrowsableYouTubeVideo[]; nextPageToken: string | null }> {
-  if (!shop.ytUploadsPlaylistId) throw new YouTubeNotConnectedError();
+  const uploadsPlaylistId = assertVerified(shop);
 
-  const page = await fetchUploads(shop.ytUploadsPlaylistId, {
+  const page = await fetchUploads(uploadsPlaylistId, {
     pageToken: options.pageToken,
   });
 
@@ -140,7 +158,7 @@ export async function importVideos(
   shop: Shop,
   videoIds: string[],
 ): Promise<YouTubeImportResult> {
-  if (!shop.ytUploadsPlaylistId) throw new YouTubeNotConnectedError();
+  assertVerified(shop);
 
   const result: YouTubeImportResult = {
     imported: 0,

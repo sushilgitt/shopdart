@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -10,11 +10,16 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { ensureShop } from "../lib/shop.server";
 import { isYouTubeConfigured, YouTubeQuotaError } from "../lib/youtube.server";
+import { signState } from "../lib/crypto.server";
+import {
+  authorizeUrl,
+  isGoogleOAuthConfigured,
+} from "../lib/youtube-oauth.server";
 import {
   YouTubeNotConnectedError,
+  YouTubeNotVerifiedError,
   type BrowsableYouTubeVideo,
   browseUploads,
-  connectChannel,
   disconnectYouTube,
   importVideos,
 } from "../lib/youtube-sync.server";
@@ -27,8 +32,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const pageToken = url.searchParams.get("pageToken") ?? undefined;
   const shortsOnly = url.searchParams.get("all") !== "1";
 
-  const configured = isYouTubeConfigured();
-  const connected = Boolean(shop.ytChannelId && shop.ytUploadsPlaylistId);
+  // Both are needed: the key reads public video data, OAuth proves the channel
+  // belongs to this merchant.
+  const configured = isYouTubeConfigured() && isGoogleOAuthConfigured();
+  const connected = Boolean(
+    shop.ytChannelId && shop.ytUploadsPlaylistId && shop.ytVerifiedAt,
+  );
 
   if (!configured || !connected) {
     return {
@@ -53,6 +62,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   } catch (error) {
     if (error instanceof YouTubeQuotaError) {
       loadError = error.message;
+    } else if (error instanceof YouTubeNotVerifiedError) {
+      loadError = "This channel has not been verified. Connect it again.";
     } else if (error instanceof YouTubeNotConnectedError) {
       loadError = "No channel is connected.";
     } else {
@@ -79,26 +90,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = String(form.get("intent") ?? "");
 
   if (intent === "connect") {
-    const input = String(form.get("channel") ?? "").trim();
-    if (!input) {
-      return { ok: false as const, error: "Enter your channel handle." };
-    }
     try {
-      const channel = await connectChannel(shop, input);
-      if (!channel) {
-        return {
-          ok: false as const,
-          error:
-            "Couldn't find that channel. Use your @handle, e.g. @yourbrand, or the full channel URL.",
-        };
-      }
-      return { ok: true as const, connected: channel.title };
+      const state = signState({ shop: shop.domain, ts: Date.now() });
+      return { ok: true as const, url: authorizeUrl(state) };
     } catch (error) {
-      if (error instanceof YouTubeQuotaError) {
-        return { ok: false as const, error: error.message };
-      }
-      console.error("connectChannel failed", error);
-      return { ok: false as const, error: "Could not reach YouTube." };
+      console.error("authorizeUrl failed", error);
+      return {
+        ok: false as const,
+        error: "YouTube isn't configured yet. Add your Google OAuth credentials.",
+      };
     }
   }
 
@@ -143,6 +143,20 @@ export default function YouTube() {
   const busy = fetcher.state !== "idle";
   const importable = videos.filter((video) => !video.imported);
 
+  // Guards against reopening the tab when the component re-renders with the
+  // same fetcher payload.
+  const openedUrl = useRef<string | null>(null);
+  const authUrl =
+    fetcher.data?.ok && "url" in fetcher.data ? fetcher.data.url : null;
+
+  // Google's consent screen refuses to render inside the embedded admin
+  // iframe, so it has to open top-level in its own tab.
+  useEffect(() => {
+    if (!authUrl || authUrl === openedUrl.current) return;
+    openedUrl.current = authUrl;
+    window.open(authUrl, "_blank", "noopener,noreferrer");
+  }, [authUrl]);
+
   const toggle = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -179,8 +193,9 @@ export default function YouTube() {
       {!configured && (
         <s-section heading="YouTube isn't set up yet">
           <s-paragraph>
-            Shopdart needs a YouTube Data API key before channels can be
-            connected. Add YOUTUBE_API_KEY.
+            Shopdart needs a YouTube Data API key and Google OAuth credentials
+            before channels can be connected. Add YOUTUBE_API_KEY,
+            GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI.
           </s-paragraph>
         </s-section>
       )}
@@ -188,27 +203,21 @@ export default function YouTube() {
       {configured && !connected && (
         <s-section heading="Connect your YouTube channel">
           <s-paragraph>
-            Enter the handle of a channel you own. Shopdart reads its public
-            uploads — it never posts, comments or changes anything.
+            Sign in with the Google account that owns your channel. Google
+            confirms which channels are yours, so only those can be connected.
           </s-paragraph>
           <s-paragraph>
             <s-text color="subdued">
-              Videos play in YouTube&rsquo;s own player, so your tagged products
-              appear beside the video rather than inside it.
+              Shopdart asks for read-only access, uses it once to confirm
+              ownership, then discards it. It never posts, comments or changes
+              anything on your channel.
             </s-text>
           </s-paragraph>
           <fetcher.Form method="post">
             <input type="hidden" name="intent" value="connect" />
-            <s-stack direction="block" gap="base">
-              <s-text-field
-                name="channel"
-                label="Channel handle"
-                placeholder="@yourbrand"
-              />
-              <s-button type="submit" {...(busy ? { loading: true } : {})}>
-                Connect channel
-              </s-button>
-            </s-stack>
+            <s-button type="submit" {...(busy ? { loading: true } : {})}>
+              Connect with Google
+            </s-button>
           </fetcher.Form>
         </s-section>
       )}
@@ -336,6 +345,9 @@ export default function YouTube() {
         <s-section slot="aside" heading="Channel">
           <s-paragraph>
             <s-text type="strong">{channelTitle}</s-text>
+          </s-paragraph>
+          <s-paragraph>
+            <s-text color="subdued">Ownership verified with Google.</s-text>
           </s-paragraph>
           <s-paragraph>
             <s-text color="subdued">
