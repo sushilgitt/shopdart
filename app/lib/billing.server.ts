@@ -9,29 +9,41 @@ import prisma from "../db.server";
  * API — appSubscriptionCreate and friends — is not used: it is legacy for new
  * apps, and it would mean reimplementing all of that ourselves.
  *
- * Our only jobs are to send merchants to the hosted page and to record which
- * plan came back.
+ * Our jobs are to send merchants to the hosted page and to record which plan
+ * they are actually on. "Actually" is load-bearing: Shopify appends
+ * `plan_handle` to the redirect after a selection, and trusting it meant
+ * visiting /app?plan_handle=elite granted Elite limits with no subscription
+ * behind them. A query parameter is user-supplied input, not proof of payment.
+ * The plan is now read from the active subscription on the app installation,
+ * which only Shopify can set.
  */
 
 /**
- * Maps a Partner-dashboard plan handle onto our Plan enum.
+ * Maps a Shopify subscription name onto our Plan enum.
  *
- * These handles must match what is configured in the Partner dashboard
- * exactly. A handle we don't recognise falls back to FREE rather than
- * throwing — the merchant is mid-flow and locking them out over a naming
- * mismatch would be worse than under-serving briefly.
+ * These are the plan NAMES as configured in the Partner dashboard, matched
+ * case-insensitively. A name we don't recognise falls back to FREE rather than
+ * throwing — under-serving a merchant briefly is better than locking them out
+ * of the app over a naming mismatch.
  */
-const HANDLE_TO_PLAN: Record<string, Plan> = {
+const NAME_TO_PLAN: Record<string, Plan> = {
   free: Plan.FREE,
   basic: Plan.BASIC,
   premium: Plan.PREMIUM,
   elite: Plan.ELITE,
 };
 
-export function planFromHandle(handle: string | null): Plan | null {
-  if (!handle) return null;
-  return HANDLE_TO_PLAN[handle.trim().toLowerCase()] ?? null;
+export function planFromName(name: string | null | undefined): Plan | null {
+  if (!name) return null;
+  return NAME_TO_PLAN[name.trim().toLowerCase()] ?? null;
 }
+
+const PLAN_RANK: Record<Plan, number> = {
+  [Plan.FREE]: 0,
+  [Plan.BASIC]: 1,
+  [Plan.PREMIUM]: 2,
+  [Plan.ELITE]: 3,
+};
 
 /** App handle from shopify.app.toml. Part of the hosted pricing URL. */
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "shopdart";
@@ -47,30 +59,92 @@ export function pricingPageUrl(shopDomain: string): string {
   return `https://admin.shopify.com/store/${storeHandle}/charges/${APP_HANDLE}/pricing_plans`;
 }
 
+const ACTIVE_SUBSCRIPTIONS_QUERY = `#graphql
+  query shopdartActiveSubscriptions {
+    currentAppInstallation {
+      activeSubscriptions {
+        id
+        name
+        status
+        test
+      }
+    }
+  }
+`;
+
+interface SubscriptionsResponse {
+  data?: {
+    currentAppInstallation?: {
+      activeSubscriptions?: {
+        id: string;
+        name: string;
+        status: string;
+        test: boolean;
+      }[];
+    };
+  };
+}
+
+/** The slice of the Admin API client this module needs. */
+interface AdminGraphql {
+  graphql: (query: string) => Promise<{ json: () => Promise<unknown> }>;
+}
+
 /**
- * Persists the plan Shopify reports after a selection.
+ * Reconciles the stored plan with the merchant's real subscription.
  *
- * Called from the app root loader, because Shopify appends `plan_handle` to
- * whatever redirect URL is configured and the merchant may land anywhere in
- * the app.
+ * Runs on every admin load rather than only after a plan change, so a
+ * cancellation, downgrade or failed payment takes effect without the merchant
+ * having to pass back through the pricing page. No active subscription means
+ * FREE, which is also where a cancelled or expired one lands.
+ *
+ * Returns null when Shopify could not be reached. Callers keep serving the
+ * stored plan in that case: a transient API error must never silently demote a
+ * paying merchant.
  */
-export async function applyPlanHandle(
+export async function syncPlanFromShopify(
+  admin: AdminGraphql,
   shopDomain: string,
-  handle: string | null,
 ): Promise<Plan | null> {
-  const plan = planFromHandle(handle);
-  if (!plan) return null;
+  let subscriptions: { name: string; status: string }[];
+
+  try {
+    const response = await admin.graphql(ACTIVE_SUBSCRIPTIONS_QUERY);
+    const body = (await response.json()) as SubscriptionsResponse;
+    subscriptions =
+      body?.data?.currentAppInstallation?.activeSubscriptions ?? [];
+  } catch (error) {
+    console.error(`Could not read subscriptions for ${shopDomain}`, error);
+    return null;
+  }
+
+  // Test subscriptions are how development stores exercise billing, so they
+  // count. Anything not ACTIVE — frozen, cancelled, pending — does not.
+  const active = subscriptions.filter(
+    (subscription) => subscription.status?.toUpperCase() === "ACTIVE",
+  );
+
+  // A merchant should never be worse off for somehow holding two active
+  // subscriptions, so the most generous one wins.
+  const plan =
+    active
+      .map((subscription) => planFromName(subscription.name))
+      .filter((value): value is Plan => value !== null)
+      .sort((a, b) => PLAN_RANK[b] - PLAN_RANK[a])[0] ?? Plan.FREE;
 
   const shop = await prisma.shop.findUnique({
     where: { domain: shopDomain },
     select: { id: true, plan: true },
   });
-  if (!shop || shop.plan === plan) return plan;
+  if (!shop) return plan;
 
-  await prisma.shop.update({
-    where: { id: shop.id },
-    data: { plan, planUpdatedAt: new Date() },
-  });
+  if (shop.plan !== plan) {
+    await prisma.shop.update({
+      where: { id: shop.id },
+      data: { plan, planUpdatedAt: new Date() },
+    });
+    console.log(`Plan for ${shopDomain}: ${shop.plan} -> ${plan}`);
+  }
 
   return plan;
 }

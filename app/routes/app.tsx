@@ -5,7 +5,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
 import { ensureShop, updateShopProfile } from "../lib/shop.server";
-import { applyPlanHandle } from "../lib/billing.server";
+import { syncPlanFromShopify } from "../lib/billing.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -48,14 +48,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  // Shopify App Pricing appends `plan_handle` to whatever redirect URL is
-  // configured after a merchant picks a plan, and they can land on any page
-  // in the app — so it is read here, at the root, rather than on a dedicated
-  // billing callback route.
-  const planHandle = new URL(request.url).searchParams.get("plan_handle");
-  if (planHandle) {
-    await applyPlanHandle(session.shop, planHandle);
-  }
+  // Reconcile the stored plan with the real subscription on every load.
+  //
+  // Shopify appends `plan_handle` to the redirect after a plan is chosen, but
+  // that is a query parameter and anyone can type one — so it is ignored
+  // entirely and the subscription is read from the Admin API instead. Doing it
+  // on every load, rather than only after a selection, also means a
+  // cancellation or failed payment takes effect without the merchant passing
+  // back through the pricing page.
+  await syncPlanFromShopify(admin, session.shop);
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
