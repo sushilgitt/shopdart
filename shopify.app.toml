@@ -43,6 +43,20 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
+  # Handled by: /app/routes/webhooks.compliance.tsx
+  #
+  # Mandatory for every public app. Shopify checks these during review and
+  # rejects the submission if they are absent or answer an unsigned probe with
+  # a 2xx. shop/redact arrives 48 hours after uninstall and is destructive by
+  # design — it deletes the shop and every video, widget and event with it.
+  [[webhooks.subscriptions]]
+  compliance_topics = [
+    "customers/data_request",
+    "customers/redact",
+    "shop/redact",
+  ]
+  uri = "/webhooks/compliance"
+
   # ProductTag caches title, image and price so the storefront payload needs no
   # Admin API call. These keep that cache honest — a stale price on a shoppable
   # video is a support ticket at best.
