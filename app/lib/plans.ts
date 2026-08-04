@@ -36,7 +36,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
   BASIC: {
     id: Plan.BASIC,
     name: "Basic",
-    price: 29.99,
+    price: 19,
     views: 3_000,
     videos: 100,
     trialDays: 7,
@@ -46,7 +46,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
   PREMIUM: {
     id: Plan.PREMIUM,
     name: "Premium",
-    price: 99.99,
+    price: 39,
     views: 20_000,
     videos: 250,
     trialDays: 7,
@@ -60,7 +60,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
   ELITE: {
     id: Plan.ELITE,
     name: "Elite",
-    price: 199.99,
+    price: 59,
     views: 50_000,
     videos: 1_000,
     trialDays: 7,
