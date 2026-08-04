@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
  */
 
 const LAST_UPDATED = "3 August 2026";
-export const CONTACT_EMAIL = "tacotoolsforteam@gmail.com";
+export const CONTACT_EMAIL = "sushilcodershive@gmail.com";
 
 const shell: React.CSSProperties = {
   fontFamily:
@@ -58,11 +58,6 @@ export function LegalPage({
         }}
       />
       <p style={{ fontSize: 14, color: "#5c6b70" }}>
-        Questions? Email{" "}
-        <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "#1f2933" }}>
-          {CONTACT_EMAIL}
-        </a>
-        . ·{" "}
         <a href="/privacy" style={{ color: "#5c6b70" }}>
           Privacy
         </a>{" "}

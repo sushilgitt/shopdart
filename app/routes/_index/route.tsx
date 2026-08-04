@@ -2,7 +2,6 @@ import type { LoaderFunctionArgs } from "react-router";
 import { redirect, Form, useLoaderData } from "react-router";
 
 import { login } from "../../shopify.server";
-import { CONTACT_EMAIL } from "../../lib/legal-page";
 
 /**
  * Public marketing page: /
@@ -160,10 +159,6 @@ export default function Index() {
         ·{" "}
         <a href="/terms" style={link}>
           Terms of Service
-        </a>{" "}
-        ·{" "}
-        <a href={`mailto:${CONTACT_EMAIL}`} style={link}>
-          {CONTACT_EMAIL}
         </a>
       </p>
     </main>

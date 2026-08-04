@@ -1,4 +1,4 @@
-import { CONTACT_EMAIL, LegalPage, Section, listStyle } from "../lib/legal-page";
+import { LegalPage, Section, listStyle } from "../lib/legal-page";
 
 /** Public terms of service: /terms */
 export const meta = () => [
@@ -103,8 +103,9 @@ export default function Terms() {
 
       <Section heading="Contact">
         <p style={{ margin: 0 }}>
-          Questions about these terms:{" "}
-          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+          Questions about these terms can be sent through the support channel on
+          our Shopify App Store listing. For data protection requests, see the{" "}
+          <a href="/privacy">Privacy Policy</a>.
         </p>
       </Section>
     </LegalPage>
