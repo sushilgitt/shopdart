@@ -1,39 +1,65 @@
-on: [push, pull_request]
-
 name: CI
 
+# Verifies Shopdart still typechecks, lints and builds.
+#
+# Deliberately a single npm job on Node 20, matching `node:20-alpine` in the
+# Dockerfile: CI should exercise the runtime we actually ship, not a matrix of
+# runtimes and package managers we never deploy on. The repo is npm-only —
+# package-lock.json, the `workspaces` field, `.npmrc` and the `overrides` block
+# are all npm-specific — so yarn and pnpm legs could only ever produce noise.
+#
+# Nothing here touches Coolify. Deploys happen when Coolify pulls `main` on its
+# own webhook, independent of this workflow's result.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: this workflow only reads the repo.
+permissions:
+  contents: read
+
+# A newer push to the same branch makes the in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  CI:
-    name: Node ${{ matrix.node }} and ${{ matrix.manager }}
+  build:
+    name: Typecheck, lint and build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node: [20.19.0, 22, 24]
-        manager: ['npm', 'yarn', 'pnpm']
+
+    env:
+      # Prisma refuses to resolve `env("DATABASE_URL")` without a value, and
+      # both steps below read the datasource block. Nothing connects — this is
+      # a placeholder to satisfy schema parsing, not a real database.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 20.19.0
+          cache: npm
 
-      - name: Install pnpm
-        if: ${{ matrix.manager == 'pnpm' }}
-        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
-        with:
-          version: 8
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Install dependencies using ${{ matrix.manager }}
-        run: ${{ matrix.manager }} install
+      # Must precede typechecking: app code imports types from @prisma/client,
+      # which do not exist until the client is generated.
+      - name: Generate Prisma client
+        run: npx prisma generate
 
-      - name: Run TypeScript type checking
-        if: ${{ !startsWith(github.head_ref || github.ref_name, 'javascript') }}
-        run: npx tsc --noEmit
+      - name: Typecheck
+        run: npm run typecheck
 
-      - name: Run ESLint
+      - name: Lint
         run: npm run lint
 
-      - name: Validate Prisma
-        run: npx prisma generate && npx prisma validate
+      - name: Validate Prisma schema
+        run: npx prisma validate
 
-      - name: Build application
+      - name: Build
         run: npm run build

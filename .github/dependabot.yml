@@ -11,8 +11,10 @@ updates:
     # Check the npm registry for updates every day (weekdays)
     schedule:
       interval: 'weekly'
-    # Dependabot defaults to 5 open pull requests at a time
-    open-pull-requests-limit: 100
+    # The template raised this to 100, which suits a repo with a team
+    # triaging dependency PRs. For a solo-maintained app it just buries the
+    # CI signal, so this is back to Dependabot's default.
+    open-pull-requests-limit: 5
 
     # Cooldown is the number of days after a release to wait until opening a PR
     # This gives us more confidence changes can be merged because changes have been community tested.
