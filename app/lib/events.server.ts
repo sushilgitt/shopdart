@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import { EventType, Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { recordPurchase } from "./attribution.server";
+import { hashSessionKey } from "./crypto.server";
 import { currentPeriod, planFor } from "./plans";
 
 /**
@@ -48,18 +48,6 @@ export interface IngestResult {
 export function isBot(userAgent: string | null): boolean {
   if (!userAgent || userAgent.trim().length < 8) return true;
   return BOT_PATTERN.test(userAgent);
-}
-
-/**
- * Hashes the client session id with the app secret.
- *
- * The raw value never reaches the database — it is only ever needed for
- * equality comparison, so there is no reason to keep it in a form that could
- * be correlated back to a shopper if the table leaked.
- */
-function hashSession(raw: string): string {
-  const salt = process.env.SHOPIFY_API_SECRET ?? "shopdart";
-  return createHash("sha256").update(`${salt}:${raw}`).digest("hex").slice(0, 40);
 }
 
 function toEventType(value: string): EventType | null {
@@ -111,7 +99,7 @@ export async function ingestEvents(
     const recorded = await recordPurchase(shop.id, {
       videoId: event.videoId,
       widgetId: event.widgetId ?? null,
-      sessionKey: event.session ? hashSession(event.session) : null,
+      sessionKey: event.session ? hashSessionKey(event.session) : null,
       orderGid: event.orderGid,
       value: Number.isFinite(value) ? value : 0,
       currencyCode: event.currency ?? null,
@@ -181,7 +169,7 @@ export async function ingestEvents(
       videoId: event.videoId ?? null,
       widgetId: event.widgetId ?? null,
       type,
-      sessionKey: hashSession(event.session),
+      sessionKey: hashSessionKey(event.session),
       productGid: event.productId ?? null,
     });
   }

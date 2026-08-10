@@ -1,6 +1,7 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHash,
   createHmac,
   randomBytes,
   timingSafeEqual,
@@ -83,6 +84,28 @@ export function decrypt(payload: string): string {
  */
 export function deriveCode(input: string, length = 12): string {
   return createHmac("sha256", key()).update(input).digest("hex").slice(0, length);
+}
+
+/**
+ * Hashes a client-generated session id for storage on VideoEvent.
+ *
+ * Lives here rather than beside either caller because there are two, and they
+ * must agree. Storefront events hash on the way in; purchases arrive either
+ * from the web pixel or the orders/create webhook, and the webhook path used to
+ * store the raw cart attribute instead. That broke the invariant the schema
+ * states — "never a raw client id" — and meant a hashed row and a raw row could
+ * never match, so the two purchase sources could not dedupe against each other.
+ *
+ * The raw value is only ever compared for equality, so there is no reason to
+ * keep it in a form that could be correlated back to a shopper if the table
+ * leaked.
+ */
+export function hashSessionKey(raw: string): string {
+  const salt = process.env.SHOPIFY_API_SECRET ?? "shopdart";
+  return createHash("sha256")
+    .update(`${salt}:${raw}`)
+    .digest("hex")
+    .slice(0, 40);
 }
 
 // ---------------------------------------------------------------------------

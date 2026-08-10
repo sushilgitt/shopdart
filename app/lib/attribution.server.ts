@@ -1,5 +1,6 @@
 import { EventType, Prisma } from "@prisma/client";
 import prisma from "../db.server";
+import { hashSessionKey } from "./crypto.server";
 import { currentPeriod } from "./plans";
 
 /**
@@ -139,10 +140,16 @@ export async function attributeOrder(
 
   const total = Number(payload.total_price);
 
+  const rawSession = readAttribute(payload, ATTR_SESSION);
+
   return recordPurchase(shop.id, {
     videoId,
     widgetId: readAttribute(payload, ATTR_WIDGET),
-    sessionKey: readAttribute(payload, ATTR_SESSION),
+    // Hashed, like every other write to this column. The cart attribute holds
+    // the raw browser session id, and storing it verbatim both broke the
+    // schema's "never a raw client id" guarantee and meant a row written here
+    // could never match one written by the pixel.
+    sessionKey: rawSession ? hashSessionKey(rawSession) : null,
     orderGid,
     value: Number.isFinite(total) ? total : 0,
     currencyCode: payload.currency ?? null,
