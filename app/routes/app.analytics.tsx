@@ -65,9 +65,6 @@ export default function Analytics() {
   const rangeLabel =
     ranges.find((range) => range.days === days)?.label ?? `${days} days`;
 
-  const rate = (numerator: number, denominator: number) =>
-    denominator > 0 ? `${((numerator / denominator) * 100).toFixed(1)}%` : "—";
-
   const money = (value: number) =>
     currency
       ? value.toLocaleString(undefined, { style: "currency", currency })
@@ -105,12 +102,21 @@ export default function Analytics() {
           <Metric label="Revenue" value={money(totals.revenue)} />
         </s-stack>
 
+        {/*
+          These counts are deliberately not presented as a funnel. Views are
+          deduped to one per shopper session per video, because that is what
+          plan limits are metered on; taps and add-to-carts are counted every
+          time, because a shopper trying three sizes is three pieces of
+          engagement. Dividing one by the other implies a subset relationship
+          that does not exist, and produced rates above 100% — a figure that
+          reads as broken analytics however correct each underlying count is.
+        */}
         {totals.views > 0 && (
           <s-paragraph>
             <s-text color="subdued">
-              {rate(totals.clicks, totals.views)} of views tap a product ·{" "}
-              {rate(totals.addToCarts, totals.clicks)} of those add to cart ·{" "}
-              {rate(totals.orders, totals.addToCarts)} of those check out
+              A view is one playback per shopper session, per video. Taps and
+              add-to-carts count every time, so they can exceed the view count
+              when a shopper tries several options.
             </s-text>
           </s-paragraph>
         )}

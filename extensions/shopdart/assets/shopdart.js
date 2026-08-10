@@ -276,12 +276,27 @@
       var title = el("span", "shopdart__product-title");
       title.textContent = product.title;
       text.appendChild(title);
-      if (product.price !== null) {
-        var price = el("span", "shopdart__product-price");
-        price.textContent = money(product.price);
-        text.appendChild(price);
-      }
+
+      var priceEl = el("span", "shopdart__product-price");
+      text.appendChild(priceEl);
       card.appendChild(text);
+
+      /**
+       * Shows the price of what the shopper would actually buy.
+       *
+       * `product.price` is the cheapest variant — a "from" figure cached at tag
+       * time. Rendering it bare next to a picker defaulting to a different
+       * variant meant the card said one price and the cart charged another. So
+       * once a variant is known, its own price is shown; the cached minimum is
+       * only used when no variant list exists, and then it says so.
+       */
+      function showPrice(amount, isFrom) {
+        if (amount === null || amount === undefined) {
+          priceEl.textContent = "";
+          return;
+        }
+        priceEl.textContent = (isFrom ? "From " : "") + money(amount);
+      }
 
       // Variants a shopper can actually buy. Sold-out ones are dropped rather
       // than shown disabled: a picker of unbuyable options reads as broken.
@@ -317,6 +332,18 @@
         });
       }
 
+      // A pinned variant means the product had exactly one, so the cached list
+      // holds the price the shopper will actually pay.
+      if (product.variantId) {
+        showPrice(buyable.length ? buyable[0].price : product.price, false);
+      } else if (buyable.length >= 1) {
+        showPrice(buyable[0].price, false);
+      } else {
+        // No variant list — older tags cached before variants were read. The
+        // minimum is all we have, so label it rather than imply it is the price.
+        showPrice(product.price, true);
+      }
+
       if (product.variantId) {
         var button = el("button", "shopdart__cta", { type: "button" });
         button.textContent = config.ctaLabel || "Shop now";
@@ -345,6 +372,15 @@
         // click; without this, choosing a size pauses the video.
         select.addEventListener("click", function (event) {
           event.stopPropagation();
+        });
+        // Keep the headline price honest as the shopper changes their mind.
+        select.addEventListener("change", function () {
+          for (var i = 0; i < buyable.length; i += 1) {
+            if (buyable[i].id === select.value) {
+              showPrice(buyable[i].price, false);
+              return;
+            }
+          }
         });
         card.appendChild(select);
 
