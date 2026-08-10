@@ -289,23 +289,29 @@
         return variant && variant.id && variant.available !== false;
       });
 
-      /**
-       * Records the tap and claims the cart for this video.
-       *
-       * The stamp happens on the tap, not only after a successful in-player
-       * add. A shopper who taps through to the product page and buys there is
-       * just as much this video's sale, and previously that entire path was
-       * credited to nobody — which is most of the reason revenue read zero.
-       */
-      function claim() {
+      function trackTap() {
         track(shop, "PRODUCT_CLICK", widget.id, video.id, product.id);
-        stampCart(video.id, widget.id);
         flush(shop);
       }
 
+      /**
+       * Claims the cart for this video, so the eventual order can be credited.
+       *
+       * Timing matters. The Ajax cart serialises writes per cart token, so
+       * firing /cart/update.js alongside /cart/add.js risks losing the
+       * attributes to a 422 — and those attributes are the entire attribution
+       * mechanism. On the buy path this therefore runs only once the add has
+       * come back; on the link path there is no competing write, so it goes
+       * immediately, before the shopper navigates away.
+       */
+      function stamp() {
+        stampCart(video.id, widget.id);
+      }
+
       function buy(variantId, button) {
-        claim();
+        trackTap();
         addToCart(variantId, button, function () {
+          stamp();
           track(shop, "ADD_TO_CART", widget.id, video.id, product.id);
           flush(shop);
         });
@@ -367,7 +373,8 @@
         link.textContent = "View";
         link.addEventListener("click", function (event) {
           event.stopPropagation();
-          claim();
+          trackTap();
+          stamp();
         });
         card.appendChild(link);
       }

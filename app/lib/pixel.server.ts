@@ -101,15 +101,29 @@ export async function ensureWebPixel(
 
   const settings = JSON.stringify({ shop: shopDomain });
 
+  // A pixel may already exist from an earlier install — webPixelCreate fails
+  // outright when one does, so look first rather than relying on the error.
+  //
+  // This lookup gets its own try/catch because "no pixel yet" is not reported
+  // as an empty result. Shopify answers with `data: { webPixel: null }` AND a
+  // GraphQL error, "No web pixel was found for this app", and the Admin client
+  // throws on any GraphQL error. That is the normal state of every shop that
+  // has never registered one — i.e. exactly the shops that need to. Letting it
+  // reach the outer handler aborted registration before it ever attempted a
+  // create, so the pixel was never installed and no purchase was ever
+  // attributed.
+  let existing: { id?: string | null; settings?: string | null } | null = null;
   try {
-    // A pixel may already exist from an earlier install — webPixelCreate fails
-    // outright when one does, so look first rather than relying on the error.
     const existingResponse = await admin.graphql(WEB_PIXEL_QUERY);
     const existingBody = (await existingResponse.json()) as {
       data?: { webPixel?: { id?: string | null; settings?: string | null } | null };
     };
-    const existing = existingBody?.data?.webPixel;
+    existing = existingBody?.data?.webPixel ?? null;
+  } catch {
+    existing = null;
+  }
 
+  try {
     let result: WebPixelPayload | undefined;
 
     if (existing?.id) {
