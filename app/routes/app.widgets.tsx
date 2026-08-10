@@ -155,12 +155,21 @@ export default function Widgets() {
         </s-stack>
       </s-section>
 
+      {/*
+        This described a Bunny pull zone that was never wired up: the player
+        fetches the payload straight from this app's origin. Claiming CDN
+        delivery and full origin-independence in merchant-facing copy was a
+        factual overstatement, so it now describes the caching that actually
+        happens — a short freshness window, plus stale-if-error to ride out a
+        brief outage.
+      */}
       <s-section slot="aside" heading="How publishing works">
         <s-paragraph>
           <s-text color="subdued">
-            Widget settings are served to your storefront as a cached file on a
-            global CDN, not fetched from our server. Your videos keep playing
-            even if Shopdart is down, and edits go live immediately.
+            Publishing takes about a minute to reach your storefront. Shoppers&rsquo;
+            browsers hold on to the settings, so if Shopdart is briefly
+            unreachable your videos keep playing from the copy they already
+            have.
           </s-text>
         </s-paragraph>
       </s-section>

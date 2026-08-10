@@ -3,8 +3,16 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { Form, redirect, useLoaderData, useSubmit } from "react-router";
+import { useEffect } from "react";
+import {
+  Form,
+  redirect,
+  useActionData,
+  useLoaderData,
+  useSubmit,
+} from "react-router";
 import { PlacementTarget, WidgetStatus } from "@prisma/client";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
@@ -152,10 +160,40 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   return { ok: false as const, error: "Unknown action" };
 };
 
+/**
+ * What each save actually did, in the merchant's words.
+ *
+ * This page has three independent save buttons plus publish and unpublish, and
+ * previously none of them acknowledged anything — the action's return value was
+ * simply discarded. A merchant could click Save, have nothing happen, and see a
+ * page identical to a successful save. Naming the specific thing that saved
+ * also tells them *which* of the three buttons they just pressed.
+ */
+const SAVED_MESSAGE: Record<string, string> = {
+  settings: "Settings saved",
+  videos: "Video selection saved",
+  placements: "Placements saved",
+  publish: "Widget published",
+  unpublish: "Widget unpublished",
+};
+
 export default function WidgetEditor() {
   const { widget, config, placements, library, untaggedSelected } =
     useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const submit = useSubmit();
+  const shopify = useAppBridge();
+
+  useEffect(() => {
+    if (!actionData) return;
+    if (actionData.ok) {
+      shopify.toast.show(SAVED_MESSAGE[actionData.saved] ?? "Saved");
+    } else {
+      shopify.toast.show(actionData.error ?? "Could not save", {
+        isError: true,
+      });
+    }
+  }, [actionData, shopify]);
 
   const live = widget.status === "PUBLISHED";
   const selectedCount = library.filter((video) => video.selected).length;

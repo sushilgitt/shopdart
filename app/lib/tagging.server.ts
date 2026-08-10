@@ -468,6 +468,21 @@ export async function refreshCachedProduct(
   return result.count;
 }
 
+/**
+ * Whether any video in any shop tags this product.
+ *
+ * Lets the products/update webhook skip untagged products before spending an
+ * Admin API call on them — a merchant repricing their whole catalogue fires one
+ * webhook per product, and almost none of them are tagged.
+ */
+export async function hasTagsForProduct(productGid: string): Promise<boolean> {
+  const count = await prisma.productTag.count({
+    where: { productGid },
+    take: 1,
+  });
+  return count > 0;
+}
+
 /** Drops tags for a product that no longer exists. */
 export async function removeTagsForProduct(productGid: string): Promise<number> {
   const result = await prisma.productTag.deleteMany({ where: { productGid } });
