@@ -13,14 +13,21 @@ import prisma from "../db.server";
 import { ensureShop } from "../lib/shop.server";
 import {
   type PickedProduct,
+  repairEmptyVariantTags,
   setTagTiming,
   tagProducts,
   untagProduct,
 } from "../lib/tagging.server";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = await ensureShop(session.shop);
+
+  // Tags written before variants were read from the Admin API carry an empty
+  // variant list, which the player can only render as a link out to the product
+  // page — no add to cart, and therefore no attribution. They are already
+  // published, so they cannot fix themselves; heal them on the way in.
+  await repairEmptyVariantTags(admin, shop.id, String(params.videoId));
 
   const video = await prisma.video.findFirst({
     where: { id: params.videoId, shopId: shop.id },
@@ -57,7 +64,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = await ensureShop(session.shop);
   const videoId = String(params.videoId);
   const form = await request.formData();
@@ -70,7 +77,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     } catch {
       return { ok: false as const, error: "Could not read the selection." };
     }
-    const added = await tagProducts(shop.id, videoId, products);
+    const added = await tagProducts(admin, shop.id, videoId, products);
     return { ok: true as const, added };
   }
 

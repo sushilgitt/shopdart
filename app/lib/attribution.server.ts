@@ -38,13 +38,87 @@ function readAttribute(
   return found?.value?.trim() || null;
 }
 
+export interface PurchaseRecord {
+  videoId: string;
+  widgetId?: string | null;
+  sessionKey?: string | null;
+  orderGid: string;
+  value: number;
+  currencyCode?: string | null;
+}
+
 /**
  * Records a purchase against the video that drove it.
  *
- * The (orderGid, videoId, type) unique index makes this idempotent — Shopify
- * retries webhooks, and a duplicate would inflate the merchant's reported
- * revenue.
+ * The single place a PURCHASE row is written, because there are two ways one
+ * arrives — the orders/create webhook and the web pixel's checkout_completed
+ * event — and they must not disagree about what gets counted.
+ *
+ * The (orderGid, videoId, type) unique index makes this idempotent. That
+ * matters more now than it did with one source: webhooks retry, pixels fire
+ * again on a refreshed thank-you page, and if both are enabled the same order
+ * legitimately arrives twice. A duplicate would inflate reported revenue, so
+ * the counter is only moved when the insert actually happened.
  */
+export async function recordPurchase(
+  shopId: string,
+  purchase: PurchaseRecord,
+): Promise<boolean> {
+  // Confirm the video belongs to this shop before crediting anything. On the
+  // pixel path this is the only thing standing between us and a forged
+  // videoId, since that endpoint is necessarily unauthenticated.
+  const video = await prisma.video.findFirst({
+    where: { id: purchase.videoId, shopId },
+    select: { id: true },
+  });
+  if (!video) return false;
+
+  const value = Number.isFinite(purchase.value) ? purchase.value : 0;
+
+  try {
+    await prisma.videoEvent.create({
+      data: {
+        shopId,
+        videoId: video.id,
+        widgetId: purchase.widgetId ?? null,
+        type: EventType.PURCHASE,
+        sessionKey: purchase.sessionKey || "unknown",
+        orderGid: purchase.orderGid,
+        value: new Prisma.Decimal(value),
+        currencyCode: purchase.currencyCode ?? null,
+      },
+    });
+  } catch (error) {
+    // Unique violation means this order was already attributed by an earlier
+    // delivery, or by the other source.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return false;
+    }
+    throw error;
+  }
+
+  const period = currentPeriod();
+  await prisma.usageCounter.upsert({
+    where: { shopId_period: { shopId, period } },
+    create: {
+      shopId,
+      period,
+      orders: 1,
+      revenue: new Prisma.Decimal(value),
+    },
+    update: {
+      orders: { increment: 1 },
+      revenue: { increment: new Prisma.Decimal(value) },
+    },
+  });
+
+  return true;
+}
+
+/** Reads the Shopdart cart attributes off an orders/create webhook payload. */
 export async function attributeOrder(
   shopDomain: string,
   payload: OrderWebhookPayload,
@@ -63,58 +137,16 @@ export async function attributeOrder(
   });
   if (!shop) return false;
 
-  // Confirm the video belongs to this shop before crediting anything.
-  const video = await prisma.video.findFirst({
-    where: { id: videoId, shopId: shop.id },
-    select: { id: true },
-  });
-  if (!video) return false;
-
-  const widgetId = readAttribute(payload, ATTR_WIDGET);
-  const session = readAttribute(payload, ATTR_SESSION) ?? "unknown";
   const total = Number(payload.total_price);
-  const value = Number.isFinite(total) ? total : 0;
 
-  try {
-    await prisma.videoEvent.create({
-      data: {
-        shopId: shop.id,
-        videoId: video.id,
-        widgetId: widgetId ?? null,
-        type: EventType.PURCHASE,
-        sessionKey: session,
-        orderGid,
-        value: new Prisma.Decimal(value),
-        currencyCode: payload.currency ?? null,
-      },
-    });
-  } catch (error) {
-    // Unique violation means this order was already attributed on an earlier
-    // delivery of the same webhook.
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      return false;
-    }
-    throw error;
-  }
-
-  await prisma.usageCounter.upsert({
-    where: { shopId_period: { shopId: shop.id, period: currentPeriod() } },
-    create: {
-      shopId: shop.id,
-      period: currentPeriod(),
-      orders: 1,
-      revenue: new Prisma.Decimal(value),
-    },
-    update: {
-      orders: { increment: 1 },
-      revenue: { increment: new Prisma.Decimal(value) },
-    },
+  return recordPurchase(shop.id, {
+    videoId,
+    widgetId: readAttribute(payload, ATTR_WIDGET),
+    sessionKey: readAttribute(payload, ATTR_SESSION),
+    orderGid,
+    value: Number.isFinite(total) ? total : 0,
+    currencyCode: payload.currency ?? null,
   });
-
-  return true;
 }
 
 export interface VideoPerformance {

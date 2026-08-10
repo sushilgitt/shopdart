@@ -1,0 +1,26 @@
+name = "Shopdart analytics"
+type = "web_pixel_extension"
+uid = "28900d13-f2b3-4ce8-85c9-6c7193a64bee"
+runtime_context = "strict"
+
+# Only the analytics purpose is claimed. The pixel reports that a purchase
+# happened and which video it came from — it does not advertise, personalise or
+# share anything, so claiming marketing or sale-of-data here would be asking
+# shoppers for consent we have no use for.
+[customer_privacy]
+analytics = true
+marketing = false
+preferences = false
+sale_of_data = "disabled"
+
+[settings]
+type = "object"
+
+# Set per shop by registerWebPixel() at install time. The pixel needs to name
+# the shop it is reporting for, and the sandbox has no session to infer it
+# from.
+[settings.fields.shop]
+name = "Shop domain"
+description = "The myshopify.com domain this pixel reports for."
+type = "single_line_text_field"
+validations = [{ name = "min", value = "1" }]

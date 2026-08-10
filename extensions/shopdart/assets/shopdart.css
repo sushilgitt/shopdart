@@ -203,6 +203,15 @@
   line-height: 1.25;
 }
 
+/*
+  `display: flex` above beats the user-agent rule for [hidden], so a product
+  tag outside its start/end window would stay visible without this. The player
+  toggles `hidden` as playback moves through the clip.
+*/
+.shopdart__product[hidden] {
+  display: none;
+}
+
 .shopdart__product img {
   width: 34px;
   height: 34px;

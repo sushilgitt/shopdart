@@ -52,6 +52,19 @@
 
   var queue = [];
   var sessionKey = null;
+  var flushTimer = null;
+
+  /**
+   * How long a queued event may wait before it is sent.
+   *
+   * Batching exists to avoid a request per interaction, but a batch that only
+   * leaves on `pagehide` is indistinguishable from broken: a merchant — or an
+   * app reviewer — who plays a video and switches to the admin sees nothing,
+   * because the storefront tab is still open and the queue is still sitting in
+   * it. Two seconds keeps the batching and makes the data show up while the
+   * person who caused it is still looking.
+   */
+  var FLUSH_DELAY_MS = 2000;
 
   function session() {
     if (sessionKey) return sessionKey;
@@ -76,21 +89,48 @@
       session: session(),
     });
     if (queue.length >= 10) flush(shop);
+    else scheduleFlush(shop);
   }
 
+  function scheduleFlush(shop) {
+    if (flushTimer) return;
+    flushTimer = setTimeout(function () {
+      flushTimer = null;
+      flush(shop);
+    }, FLUSH_DELAY_MS);
+  }
+
+  /**
+   * Body type is load-bearing, not incidental.
+   *
+   * `text/plain` is one of the three CORS-safelisted content types, so this
+   * stays a "simple" cross-origin request and the browser sends it straight
+   * through. `application/json` is not safelisted: it forces a preflight, and a
+   * preflight cannot be answered here — React Router routes only GET and the
+   * mutation methods, so an OPTIONS request never reaches the route and is
+   * rejected with a bare 405. Every beacon that needed a preflight was
+   * therefore dropped by the browser before it ever left.
+   *
+   * The server reads the body as text and parses it, so the payload is
+   * unchanged.
+   */
   function flush(shop) {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
     if (!queue.length) return;
     var body = JSON.stringify({ shop: shop, events: queue.splice(0, 50) });
     // sendBeacon survives the page unloading; fetch does not.
     if (navigator.sendBeacon) {
       navigator.sendBeacon(
         ORIGIN + "/api/events",
-        new Blob([body], { type: "application/json" })
+        new Blob([body], { type: "text/plain;charset=UTF-8" })
       );
     } else {
       fetch(ORIGIN + "/api/events", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
         body: body,
         keepalive: true,
         mode: "cors",
@@ -118,6 +158,10 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ attributes: attributes }),
+      // The shopper may be navigating to the product page as this fires.
+      // Without keepalive the request is cancelled and the sale that follows
+      // is credited to nobody.
+      keepalive: true,
     }).catch(function () {
       // Attribution is a nice-to-have; never let it break the purchase.
     });
@@ -209,11 +253,17 @@
     return link;
   }
 
+  /** Products visible over the video at any one moment. More is a wall. */
+  var MAX_VISIBLE_PRODUCTS = 2;
+  /** Cards built per video. Beyond this the payload stops earning its bytes. */
+  var MAX_BUILT_PRODUCTS = 6;
+
   function buildProducts(video, config, shop, widget) {
     if (!config.showProductCard || !video.products.length) return null;
     var wrap = el("div", "shopdart__products");
+    var entries = [];
 
-    video.products.slice(0, 2).forEach(function (product) {
+    video.products.slice(0, MAX_BUILT_PRODUCTS).forEach(function (product) {
       var card = el("div", "shopdart__product");
 
       if (product.image) {
@@ -239,10 +289,23 @@
         return variant && variant.id && variant.available !== false;
       });
 
-      function buy(variantId, button) {
+      /**
+       * Records the tap and claims the cart for this video.
+       *
+       * The stamp happens on the tap, not only after a successful in-player
+       * add. A shopper who taps through to the product page and buys there is
+       * just as much this video's sale, and previously that entire path was
+       * credited to nobody — which is most of the reason revenue read zero.
+       */
+      function claim() {
         track(shop, "PRODUCT_CLICK", widget.id, video.id, product.id);
+        stampCart(video.id, widget.id);
+        flush(shop);
+      }
+
+      function buy(variantId, button) {
+        claim();
         addToCart(variantId, button, function () {
-          stampCart(video.id, widget.id);
           track(shop, "ADD_TO_CART", widget.id, video.id, product.id);
           flush(shop);
         });
@@ -297,20 +360,43 @@
         });
         card.appendChild(soleButton);
       } else if (product.handle) {
-        // Multi-variant products need the shopper to choose, so send them to
-        // the product page rather than guessing a size for them.
+        // Last resort: nothing buyable is known for this product, so send the
+        // shopper to the product page. The cart is still claimed on the way
+        // out so a purchase there is attributed back to this video.
         var link = el("a", "shopdart__cta", { href: "/products/" + product.handle });
         link.textContent = "View";
         link.addEventListener("click", function (event) {
           event.stopPropagation();
-          track(shop, "PRODUCT_CLICK", widget.id, video.id, product.id);
-          flush(shop);
+          claim();
         });
         card.appendChild(link);
       }
 
       wrap.appendChild(card);
+      entries.push({ product: product, card: card });
     });
+
+    /**
+     * Shows the products due at `seconds` of playback.
+     *
+     * Tags carry a start/end window that the admin already reports back to the
+     * merchant ("shown 1s to 9s"), but the player used to ignore it and pin the
+     * first two products for the whole clip. Same data, two different answers
+     * depending on where you looked.
+     */
+    wrap._sync = function (seconds) {
+      var shown = 0;
+      entries.forEach(function (entry) {
+        var from = entry.product.from;
+        var to = entry.product.to;
+        var started = from === null || from === undefined || seconds >= from;
+        var ended = to !== null && to !== undefined && seconds > to;
+        var due = started && !ended && shown < MAX_VISIBLE_PRODUCTS;
+        entry.card.hidden = !due;
+        if (due) shown += 1;
+      });
+    };
+    wrap._sync(0);
 
     return wrap;
   }
@@ -383,6 +469,24 @@
 
     var player = null;
     var wantsPlay = false;
+    // YouTube's player emits no timeupdate, so the product window is polled
+    // while the clip is actually playing and stopped as soon as it is not.
+    var syncTimer = null;
+
+    function startSync() {
+      if (syncTimer || !products || !products._sync) return;
+      syncTimer = setInterval(function () {
+        if (player && player.getCurrentTime) {
+          products._sync(player.getCurrentTime() || 0);
+        }
+      }, 500);
+    }
+
+    function stopSync() {
+      if (!syncTimer) return;
+      clearInterval(syncTimer);
+      syncTimer = null;
+    }
 
     tile._load = function () {
       if (host.dataset.loaded) return;
@@ -433,12 +537,14 @@
       tile._load();
       if (player && player.playVideo) player.playVideo();
       tile.dataset.playing = "true";
+      startSync();
     };
 
     tile._pause = function () {
       wantsPlay = false;
       if (player && player.pauseVideo) player.pauseVideo();
       tile.dataset.playing = "false";
+      stopSync();
     };
 
     return tile;
@@ -481,7 +587,14 @@
     tile.appendChild(media);
 
     var products = buildProducts(video, config, shop, widget);
-    if (products) tile.appendChild(products);
+    if (products) {
+      tile.appendChild(products);
+      if (products._sync) {
+        media.addEventListener("timeupdate", function () {
+          products._sync(media.currentTime || 0);
+        });
+      }
+    }
 
     tile._load = function () {
       if (media.dataset.loaded) return;

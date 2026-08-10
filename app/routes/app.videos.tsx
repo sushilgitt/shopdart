@@ -13,10 +13,16 @@ import { ensureShop } from "../lib/shop.server";
 import { planFor } from "../lib/plans";
 import { isBunnyConfigured } from "../lib/bunny.server";
 import { archiveVideo, countActiveVideos } from "../lib/video.server";
+import { repairEmptyVariantTags } from "../lib/tagging.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = await ensureShop(session.shop);
+
+  // Shop-wide sweep for tags cached without variants — see
+  // repairEmptyVariantTags. A no-op once healed, so it costs nothing to leave
+  // on the page a merchant lands on most often.
+  await repairEmptyVariantTags(admin, shop.id);
 
   const videos = await prisma.video.findMany({
     where: { shopId: shop.id, archivedAt: null },

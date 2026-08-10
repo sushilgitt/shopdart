@@ -130,8 +130,8 @@ export default function Analytics() {
             </s-paragraph>
             <s-paragraph>
               <s-text color="subdued">
-                Revenue is matched through cart attributes and the order
-                webhook, so a sale is credited to the video that caused it
+                Revenue is matched through cart attributes read back at
+                checkout, so a sale is credited to the video that caused it
                 rather than estimated.
               </s-text>
             </s-paragraph>

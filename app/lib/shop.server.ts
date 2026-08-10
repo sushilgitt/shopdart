@@ -37,7 +37,13 @@ export async function ensureShop(domain: string): Promise<Shop> {
 export async function markUninstalled(domain: string): Promise<void> {
   await prisma.shop.updateMany({
     where: { domain, uninstalledAt: null },
-    data: { uninstalledAt: new Date() },
+    data: {
+      uninstalledAt: new Date(),
+      // Shopify destroys the WebPixel record on uninstall. Keeping the id would
+      // make a reinstall skip registration and silently lose purchase
+      // attribution, so forget it and let the next load register a fresh one.
+      webPixelId: null,
+    },
   });
 }
 

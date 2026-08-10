@@ -7,17 +7,29 @@ application_url = "https://shopdart.91.239.208.85.sslip.io"
 embedded = true
 
 [access_scopes]
-# read_products — product picker and the product data shown on video tags
+# read_products — product picker, and the title/price/variant data cached onto
+#   video tags. The storefront payload is a static document with no Admin API
+#   behind it, so whatever is cached from here is exactly what shoppers see.
+#
+# write_pixels + read_customer_events — the Shopdart analytics web pixel.
+#   Purchase attribution has to observe checkout, and the theme extension's
+#   script does not run there. write_pixels lets the app create the WebPixel
+#   record (it implies read_pixels); read_customer_events is what makes Shopify
+#   deliver the events to it.
 #
 # read_orders is intentionally absent. It is protected customer data, and
 # Shopify refuses to create an app version that requests it (or subscribes to
 # orders/* webhooks) until the app is approved. Approval is requested under
 # App setup → Protected customer data access in the Partner dashboard.
 #
-# The attribution code is written and dormant. Once approved, add read_orders
-# back here and uncomment the orders/create subscription below.
+# Attribution deliberately does not depend on that approval: the web pixel
+# reads the cart attributes we wrote ourselves off checkout_completed, and none
+# of the fields it touches are PII, so no protected scope is involved. The
+# orders/create handler below stays as a second, equivalent source for anyone
+# who does get approved — both write through recordPurchase() and dedupe on the
+# same order id, so enabling it cannot double-count.
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products"
+scopes = "read_products,write_pixels,read_customer_events"
 
 [auth]
 redirect_urls = [

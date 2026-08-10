@@ -6,6 +6,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 import { ensureShop, updateShopProfile } from "../lib/shop.server";
 import { syncPlanFromShopify } from "../lib/billing.server";
+import { ensureWebPixel } from "../lib/pixel.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -57,6 +58,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // cancellation or failed payment takes effect without the merchant passing
   // back through the pricing page.
   await syncPlanFromShopify(admin, session.shop);
+
+  // Shopify only delivers customer events once a WebPixel record exists on the
+  // shop, and only the app can create one. Without it the checkout_completed
+  // subscription never fires and orders are never attributed. Cached on the
+  // Shop row, so this is a no-op after the first load.
+  await ensureWebPixel(admin, session.shop);
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };

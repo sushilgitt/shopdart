@@ -153,8 +153,8 @@ export default function Dashboard() {
         </s-stack>
         <s-paragraph>
           <s-text color="subdued">
-            Attribution lands once the storefront player and order webhook ship.
-            Counts stay at zero until then.
+            Updated as shoppers watch and buy. Views and product taps appear
+            within about a minute; orders are credited when checkout completes.
           </s-text>
         </s-paragraph>
       </s-section>

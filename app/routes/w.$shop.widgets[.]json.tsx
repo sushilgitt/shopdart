@@ -10,10 +10,15 @@ import { buildStorefrontPayload } from "../lib/storefront-payload.server";
  *
  * Caching is the whole design here:
  *  - `max-age=60` so a merchant's edit appears within a minute.
- *  - `stale-while-revalidate=86400` so shoppers are served instantly from
- *    cache while it refreshes in the background, and — importantly — keep
- *    being served if our origin is down. A storefront should not lose its
- *    video section because Shopdart is having a bad day.
+ *  - `stale-while-revalidate=300` so shoppers are served instantly from cache
+ *    while it refreshes in the background. Deliberately short: a day of
+ *    stale-while-revalidate meant a merchant could fix a product tag, watch the
+ *    payload update at the origin, and still be shown yesterday's copy on their
+ *    own storefront — the app and the store disagreeing about the same data.
+ *  - `stale-if-error=86400` keeps the outage protection that the long window
+ *    was really there for. If our origin is down, storefronts carry on with the
+ *    last good payload for a day rather than losing their video section
+ *    because Shopdart is having a bad day.
  *
  * Metafields were the alternative and are wrong here: they are cached in
  * Liquid for hours, so a merchant changing a colour would not see it until the
@@ -33,7 +38,7 @@ export const loader = async ({ params, request }: LoaderFunctionArgs) => {
   const headers: Record<string, string> = {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control":
-      "public, max-age=60, stale-while-revalidate=86400, stale-if-error=86400",
+      "public, max-age=60, stale-while-revalidate=300, stale-if-error=86400",
     // Storefronts are on the merchant's own domain, so this is cross-origin by
     // definition. The document is public and contains no shopper data.
     "Access-Control-Allow-Origin": "*",

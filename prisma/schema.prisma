@@ -75,6 +75,11 @@ model Shop {
   // Shopify AppSubscription GID. Null on the free plan.
   billingGid    String?
 
+  // WebPixel GID, set once the analytics pixel is registered on this shop.
+  // Cached so the admin does not re-query the Admin API on every page load;
+  // null simply means "not registered yet", which is self-correcting.
+  webPixelId String?
+
   // Instagram Graph API connection (merchant's own Business/Creator account).
   // igAccessToken is a long-lived token — encrypt before writing and never
   // include it in a loader response.

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { EventType, Prisma } from "@prisma/client";
 import prisma from "../db.server";
+import { recordPurchase } from "./attribution.server";
 import { currentPeriod, planFor } from "./plans";
 
 /**
@@ -33,6 +34,10 @@ export interface IncomingEvent {
   productId?: string;
   /** Opaque client-generated session id. Hashed before storage. */
   session?: string;
+  /** PURCHASE only, sent by the web pixel. */
+  orderGid?: string;
+  value?: number;
+  currency?: string;
 }
 
 export interface IngestResult {
@@ -69,16 +74,61 @@ export async function ingestEvents(
   events: IncomingEvent[],
   userAgent: string | null,
 ): Promise<IngestResult> {
-  if (isBot(userAgent)) {
-    return { accepted: 0, rejected: events.length };
-  }
-
   const shop = await prisma.shop.findUnique({
     where: { domain: shopDomain },
     select: { id: true, plan: true, uninstalledAt: true },
   });
   if (!shop || shop.uninstalledAt) {
     return { accepted: 0, rejected: events.length };
+  }
+
+  // Purchases are split out before anything else. They arrive from the web
+  // pixel's checkout_completed event, carry a real order id, and are written
+  // through the same path as the orders/create webhook so the two can never
+  // disagree.
+  //
+  // They also skip the bot filter deliberately. That filter exists to stop
+  // crawler traffic inflating metered views; a completed order is not
+  // speculative traffic, and dropping one because a headless-looking user agent
+  // reached the thank-you page would under-report real revenue — the failure
+  // mode a merchant notices immediately.
+  const purchases = events.filter(
+    (event) => toEventType(event.type ?? "") === EventType.PURCHASE,
+  );
+  const behaviour = events.filter(
+    (event) => toEventType(event.type ?? "") !== EventType.PURCHASE,
+  );
+
+  let purchasesAccepted = 0;
+  let purchasesRejected = 0;
+
+  for (const event of purchases) {
+    if (!event.videoId || !event.orderGid) {
+      purchasesRejected += 1;
+      continue;
+    }
+    const value = Number(event.value);
+    const recorded = await recordPurchase(shop.id, {
+      videoId: event.videoId,
+      widgetId: event.widgetId ?? null,
+      sessionKey: event.session ? hashSession(event.session) : null,
+      orderGid: event.orderGid,
+      value: Number.isFinite(value) ? value : 0,
+      currencyCode: event.currency ?? null,
+    });
+    if (recorded) purchasesAccepted += 1;
+    else purchasesRejected += 1;
+  }
+
+  if (behaviour.length === 0) {
+    return { accepted: purchasesAccepted, rejected: purchasesRejected };
+  }
+
+  if (isBot(userAgent)) {
+    return {
+      accepted: purchasesAccepted,
+      rejected: purchasesRejected + behaviour.length,
+    };
   }
 
   // Only accept ids that belong to this shop. Without this check anyone could
@@ -88,7 +138,9 @@ export async function ingestEvents(
       .findMany({
         where: {
           shopId: shop.id,
-          id: { in: events.map((e) => e.videoId).filter(Boolean) as string[] },
+          id: {
+            in: behaviour.map((e) => e.videoId).filter(Boolean) as string[],
+          },
         },
         select: { id: true },
       })
@@ -97,7 +149,9 @@ export async function ingestEvents(
       .findMany({
         where: {
           shopId: shop.id,
-          id: { in: events.map((e) => e.widgetId).filter(Boolean) as string[] },
+          id: {
+            in: behaviour.map((e) => e.widgetId).filter(Boolean) as string[],
+          },
         },
         select: { id: true },
       })
@@ -105,9 +159,9 @@ export async function ingestEvents(
   ]);
 
   const rows: Prisma.VideoEventCreateManyInput[] = [];
-  let rejected = 0;
+  let rejected = purchasesRejected;
 
-  for (const event of events) {
+  for (const event of behaviour) {
     const type = toEventType(event.type ?? "");
     if (!type || !event.session) {
       rejected += 1;
@@ -132,7 +186,9 @@ export async function ingestEvents(
     });
   }
 
-  if (rows.length === 0) return { accepted: 0, rejected };
+  if (rows.length === 0) {
+    return { accepted: purchasesAccepted, rejected };
+  }
 
   // Drop repeats of deduped types this session has already sent.
   const dedupeCandidates = rows.filter((row) => DEDUPED.includes(row.type));
@@ -167,7 +223,10 @@ export async function ingestEvents(
   });
 
   if (fresh.length === 0) {
-    return { accepted: 0, rejected: rejected + rows.length };
+    return {
+      accepted: purchasesAccepted,
+      rejected: rejected + rows.length,
+    };
   }
 
   await prisma.videoEvent.createMany({ data: fresh, skipDuplicates: true });
@@ -175,7 +234,7 @@ export async function ingestEvents(
   await rollUp(shop.id, shop.plan, fresh);
 
   return {
-    accepted: fresh.length,
+    accepted: purchasesAccepted + fresh.length,
     rejected: rejected + (rows.length - fresh.length),
   };
 }
