@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -76,17 +76,25 @@ export default function Videos() {
   const { videos, used, limit, instagramConnected, igUsername, bunnyReady } =
     useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
-  const fileInput = useRef<HTMLInputElement>(null);
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
   const [notice, setNotice] = useState<string | null>(null);
 
   const atLimit = used >= limit;
+  const uploadsDisabled = atLimit || !bunnyReady;
+
+  // Shown on the drop zone itself, so the reason sits next to the control the
+  // merchant just found unresponsive rather than only in a panel further down.
+  const blockedReason = !bunnyReady
+    ? "Video hosting isn't connected yet."
+    : atLimit
+      ? `You've used all ${limit.toLocaleString()} videos on your plan.`
+      : null;
 
   const handleFiles = useCallback(
-    async (files: FileList) => {
+    async (files: File[]) => {
       setNotice(null);
 
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         const key = `${file.name}-${file.lastModified}`;
         setUploads((prev) => ({
           ...prev,
@@ -170,28 +178,6 @@ export default function Videos() {
 
   return (
     <s-page heading="Videos">
-      <s-button
-        slot="primary-action"
-        onClick={() => fileInput.current?.click()}
-        {...(atLimit || !bunnyReady ? { disabled: true } : {})}
-      >
-        Upload video
-      </s-button>
-
-      <input
-        ref={fileInput}
-        type="file"
-        accept="video/*"
-        multiple
-        style={{ display: "none" }}
-        onChange={(event) => {
-          if (event.target.files?.length) {
-            void handleFiles(event.target.files);
-          }
-          event.target.value = "";
-        }}
-      />
-
       {!bunnyReady && (
         <s-section heading="Video hosting isn't connected yet">
           <s-paragraph>
@@ -200,6 +186,51 @@ export default function Videos() {
           </s-paragraph>
         </s-section>
       )}
+
+      {/*
+        The upload control has to live in the page body, not in the title bar.
+
+        `slot="primary-action"` on s-page does not render a button inside the
+        app frame — it configures the Shopify admin's own title bar, which is a
+        different document. App Bridge relays the press back in as a synthetic
+        event, and a synthetic event carries no transient user activation. That
+        is fatal for exactly one thing: opening a file picker. `input.click()`
+        is specified to return silently without activation, so the old header
+        button fired its handler, opened nothing, and reported no error.
+
+        s-drop-zone sits in the frame, so its click is a real user gesture. It
+        also accepts drag-and-drop, which the hidden input never could.
+      */}
+      <s-section heading="Upload video">
+        <s-paragraph>
+          <s-text color="subdued">
+            Drop video files here, or click to choose them. Files upload straight
+            from your browser to Bunny Stream, so they never pass through
+            Shopdart and large uploads resume if the connection drops.
+          </s-text>
+        </s-paragraph>
+        <s-drop-zone
+          label="Video files"
+          labelAccessibilityVisibility="exclusive"
+          accessibilityLabel="Drop video files here, or click to choose them"
+          accept="video/*"
+          multiple
+          onChange={(event) => {
+            // Snapshot before resetting: clearing `value` is what lets a
+            // merchant re-pick the same file after a failed attempt, and the
+            // file list is emptied by that reset.
+            const zone = event.currentTarget;
+            const picked = Array.from(zone.files ?? []);
+            zone.value = "";
+            if (picked.length > 0) void handleFiles(picked);
+          }}
+          onDropRejected={() =>
+            setNotice("That file isn't a video Shopdart can upload.")
+          }
+          {...(uploadsDisabled ? { disabled: true } : {})}
+          {...(blockedReason ? { error: blockedReason } : {})}
+        />
+      </s-section>
 
       {notice && (
         <s-section heading="Upload didn't start">
