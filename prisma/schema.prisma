@@ -141,7 +141,10 @@ model Video {
   shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   source VideoSource @default(UPLOAD)
-  // Instagram media id, or the original filename for uploads.
+  // External identity for imported videos: the Instagram media id, or the
+  // YouTube video id. Null for direct uploads, which have no external
+  // identity — the @@unique below exists to stop the same remote video being
+  // imported twice, and uploads must not be deduped by it.
   sourceRef String?
   // Permalink back to the original post, shown in the admin.
   sourceUrl String?

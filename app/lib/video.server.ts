@@ -56,16 +56,43 @@ export async function beginUpload(
   const displayTitle = title?.trim() || stripExtension(fileName);
   const bunny = await createBunnyVideo(displayTitle);
 
-  const video = await prisma.video.create({
-    data: {
-      shopId: shop.id,
-      source: VideoSource.UPLOAD,
-      sourceRef: fileName,
-      title: displayTitle,
-      bunnyVideoId: bunny.guid,
-      status: VideoStatus.UPLOADING,
-    },
-  });
+  let video: Video;
+  try {
+    video = await prisma.video.create({
+      data: {
+        shopId: shop.id,
+        source: VideoSource.UPLOAD,
+        // Deliberately null.
+        //
+        // `@@unique([shopId, source, sourceRef])` is an external-identity
+        // dedupe key: it is what stops the same Instagram reel or YouTube
+        // video being imported twice. A direct upload has no external
+        // identity. Two files that happen to share a name are two different
+        // videos, and the same file uploaded again is a deliberate act —
+        // usually a retry after something failed.
+        //
+        // Storing the filename here put uploads under that index anyway, so a
+        // shop could upload any given filename exactly once, ever. Worse, the
+        // row left behind by a failed attempt made every retry of that file
+        // collide, which is the state this shop was stuck in. The filename
+        // still reaches the merchant as the title.
+        sourceRef: null,
+        title: displayTitle,
+        bunnyVideoId: bunny.guid,
+        status: VideoStatus.UPLOADING,
+      },
+    });
+  } catch (error) {
+    // The Bunny asset is allocated before the row exists and is billed per
+    // minute stored. Without this, every failed insert leaked one — the
+    // filename collision above quietly created a fresh orphan on each retry.
+    try {
+      await deleteBunnyVideo(bunny.guid);
+    } catch (cleanupError) {
+      console.error(`Could not release Bunny video ${bunny.guid}`, cleanupError);
+    }
+    throw error;
+  }
 
   return { video, upload: presignUpload(bunny.guid) };
 }
