@@ -1,10 +1,16 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { Form, useLoaderData, useRevalidator } from "react-router";
+import {
+  Form,
+  useActionData,
+  useLoaderData,
+  useRevalidator,
+} from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
@@ -14,23 +20,31 @@ import { planFor } from "../lib/plans";
 import { isBunnyConfigured } from "../lib/bunny.server";
 import { archiveVideo, countActiveVideos } from "../lib/video.server";
 import { startUpload } from "../lib/upload-client";
+import {
+  TikTokUnreachableError,
+  beginAccountClaim,
+  disconnectTikTok,
+  verifyAccountByCaption,
+  verificationCodeFor,
+} from "../lib/tiktok-sync.server";
 
 /**
  * TikTok.
  *
- * Structurally unlike the Instagram and YouTube pages, and it has to be. Those
- * browse a connected account and import in one click, because both platforms
- * hand back something importable — a file in Instagram's case, an embeddable
- * id in YouTube's.
+ * Two things make this page unlike Instagram and YouTube.
  *
- * TikTok hands back neither. No tier of their API returns a video file, and
- * that is a deliberate content-protection decision rather than a gap to route
- * around. The honest options were an iframe embed, which renders blank in
- * every country where TikTok is blocked — including one holding roughly a
- * third of this market's merchants — or the merchant's own file. This page is
- * the second: it collects the link for provenance and the original file for
- * playback, and what comes out is an ordinary hosted video with full autoplay
- * and in-player checkout.
+ * First, nothing is imported. No tier of TikTok's API returns a video file, so
+ * the merchant supplies the original they filmed and it travels the ordinary
+ * upload path into Bunny. What comes out plays with full autoplay and
+ * in-player checkout, and does not go blank in the countries where TikTok is
+ * blocked.
+ *
+ * Second, ownership has to be proven rather than assumed. Instagram's token is
+ * scoped to the merchant's own media and YouTube answers `mine=true`; TikTok
+ * offers neither without a developer app. So the merchant publishes a derived
+ * code in the caption of one of their own posts, and oEmbed reads it back —
+ * the same trust model as a DNS TXT record. Until that passes, this page will
+ * not accept a video.
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -44,6 +58,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   return {
+    username: shop.ttUsername,
+    verified: Boolean(shop.ttVerifiedAt),
+    // Only meaningful while a claim is pending, and only ever shown to the
+    // merchant who owns the shop it is derived from.
+    code:
+      shop.ttUsername && !shop.ttVerifiedAt
+        ? verificationCodeFor(shop.id, shop.ttUsername)
+        : null,
     videos: videos.map((video) => ({
       id: video.id,
       title: video.title ?? "Untitled",
@@ -63,35 +85,88 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = await ensureShop(session.shop);
   const form = await request.formData();
+  const intent = String(form.get("intent") ?? "");
 
-  if (String(form.get("intent")) === "archive") {
+  if (intent === "claim") {
+    const claim = await beginAccountClaim(shop, String(form.get("username") ?? ""));
+    if (!claim) {
+      return {
+        ok: false as const,
+        error: "That doesn't look like a TikTok username. Enter it like @yourname.",
+      };
+    }
+    return { ok: true as const, message: `Now add the code to a post on @${claim.username}.` };
+  }
+
+  if (intent === "verify") {
+    try {
+      const result = await verifyAccountByCaption(shop, String(form.get("postUrl") ?? ""));
+      return result.ok
+        ? { ok: true as const, message: "TikTok account verified." }
+        : { ok: false as const, error: result.reason };
+    } catch (error) {
+      if (error instanceof TikTokUnreachableError) {
+        return { ok: false as const, error: error.message };
+      }
+      console.error("TikTok verification failed", error);
+      return { ok: false as const, error: "Could not check that post. Try again." };
+    }
+  }
+
+  if (intent === "disconnect") {
+    await disconnectTikTok(shop.id);
+    return { ok: true as const, message: "TikTok account disconnected." };
+  }
+
+  if (intent === "archive") {
     await archiveVideo(shop.id, String(form.get("videoId")));
-    return { ok: true as const };
+    return { ok: true as const, message: "Video removed." };
   }
 
   return { ok: false as const, error: "Unknown action" };
 };
 
 export default function TikTok() {
-  const { videos, used, limit, bunnyReady } = useLoaderData<typeof loader>();
+  const { username, verified, code, videos, used, limit, bunnyReady } =
+    useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const revalidator = useRevalidator();
+  const shopify = useAppBridge();
+
+  // Every action on this page — claiming, verifying, disconnecting, removing —
+  // returns to a page that can look identical to the one before it. Verifying
+  // in particular fails for several distinct reasons, and the merchant has to
+  // be told which one.
+  useEffect(() => {
+    if (!actionData) return;
+    if (actionData.ok) {
+      shopify.toast.show(actionData.message ?? "Saved");
+    } else {
+      shopify.toast.show(actionData.error ?? "That didn't work", {
+        isError: true,
+      });
+    }
+  }, [actionData, shopify]);
 
   const [link, setLink] = useState("");
-  const [owned, setOwned] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const atLimit = used >= limit;
 
-  // Shown on the drop zone itself, so the reason sits next to the control the
-  // merchant just found unresponsive rather than only in a panel further down.
+  // The link is required, not optional. It is the only thing that ties an
+  // uploaded file to a post we can check the ownership of — without it there
+  // is nothing to verify against, and this page would be an ordinary upload
+  // form wearing a TikTok heading.
   const blocked = !bunnyReady
     ? "Video hosting isn't connected yet."
-    : atLimit
-      ? `You've used all ${limit.toLocaleString()} videos on your plan.`
-      : !owned
-        ? "Confirm the video is yours before uploading."
-        : null;
+    : !verified
+      ? "Verify your TikTok account before adding videos."
+      : atLimit
+        ? `You've used all ${limit.toLocaleString()} videos on your plan.`
+        : !link.trim()
+          ? "Paste the link to your TikTok post first."
+          : null;
 
   const handleFiles = useCallback(
     async (files: File[]) => {
@@ -101,7 +176,7 @@ export default function TikTok() {
 
       setProgress(0);
       const result = await startUpload(
-        { file, sourceUrl: link.trim() || undefined },
+        { file, sourceUrl: link.trim() },
         { onProgress: setProgress },
       );
       setProgress(null);
@@ -129,57 +204,112 @@ export default function TikTok() {
         </s-section>
       )}
 
-      <s-section heading="Add a TikTok video">
-        <s-paragraph>
-          <s-text color="subdued">
-            TikTok doesn&rsquo;t let apps download videos, so Shopdart uses the
-            file you already have. Paste the link to your post so the video
-            stays connected to it, then drop in the video file itself.
-          </s-text>
-        </s-paragraph>
-
-        <s-text-field
-          label="TikTok post link (optional)"
-          placeholder="https://www.tiktok.com/@yourname/video/1234567890"
-          value={link}
-          onChange={(event) => setLink(event.currentTarget.value)}
-        />
-
-        <s-checkbox
-          label="This video is mine, or I have permission to use it"
-          checked={owned}
-          onChange={(event) => setOwned(event.currentTarget.checked)}
-        />
-
-        <s-drop-zone
-          label="Video file"
-          labelAccessibilityVisibility="exclusive"
-          accessibilityLabel="Drop your TikTok video file here, or click to choose it"
-          accept="video/*"
-          onChange={(event) => {
-            // Snapshot before resetting: clearing `value` is what lets a
-            // merchant re-pick the same file after a failed attempt, and the
-            // file list is emptied by that reset.
-            const zone = event.currentTarget;
-            const picked = Array.from(zone.files ?? []);
-            zone.value = "";
-            if (picked.length > 0) void handleFiles(picked);
-          }}
-          onDropRejected={() =>
-            setNotice("That file isn't a video Shopdart can upload.")
-          }
-          {...(blocked ? { disabled: true, error: blocked } : {})}
-        />
-
-        {progress !== null && (
+      {!username && (
+        <s-section heading="Connect your TikTok account">
           <s-paragraph>
-            <s-text color="subdued">{progress}% uploaded</s-text>
+            <s-text color="subdued">
+              Shopdart only accepts videos from an account you have proven is
+              yours. Enter your username to start.
+            </s-text>
           </s-paragraph>
-        )}
-      </s-section>
+          <Form method="post">
+            <input type="hidden" name="intent" value="claim" />
+            <s-stack direction="block" gap="base">
+              <s-text-field
+                name="username"
+                label="TikTok username"
+                placeholder="@yourname"
+              />
+              <s-button type="submit">Continue</s-button>
+            </s-stack>
+          </Form>
+        </s-section>
+      )}
+
+      {username && !verified && code && (
+        <s-section heading={`Verify that @${username} is yours`}>
+          <s-paragraph>
+            Add this code to the caption of any one of your TikTok posts. Only
+            someone signed in to the account can do that, which is what proves
+            it belongs to you. You can remove the code once verified.
+          </s-paragraph>
+          <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
+            <s-text type="strong">{code}</s-text>
+          </s-box>
+          <s-paragraph>
+            <s-text color="subdued">
+              Then paste that post&rsquo;s link below. TikTok can take a minute
+              to publish a caption edit.
+            </s-text>
+          </s-paragraph>
+          <Form method="post">
+            <input type="hidden" name="intent" value="verify" />
+            <s-stack direction="block" gap="base">
+              <s-text-field
+                name="postUrl"
+                label="Link to the post containing the code"
+                placeholder="https://www.tiktok.com/@yourname/video/1234567890"
+              />
+              <s-button type="submit">Verify account</s-button>
+            </s-stack>
+          </Form>
+          <Form method="post">
+            <input type="hidden" name="intent" value="disconnect" />
+            <s-button type="submit" variant="tertiary">
+              Use a different account
+            </s-button>
+          </Form>
+        </s-section>
+      )}
+
+      {verified && (
+        <s-section heading="Add a video from your TikTok">
+          <s-paragraph>
+            <s-text color="subdued">
+              TikTok doesn&rsquo;t let apps download videos, so Shopdart uses
+              the file you already have. Paste the link to your post, then drop
+              in the video file. Shopdart checks with TikTok that the post is
+              yours before accepting it.
+            </s-text>
+          </s-paragraph>
+
+          <s-text-field
+            label="TikTok post link"
+            placeholder="https://www.tiktok.com/@yourname/video/1234567890"
+            value={link}
+            onChange={(event) => setLink(event.currentTarget.value)}
+          />
+
+          <s-drop-zone
+            label="Video file"
+            labelAccessibilityVisibility="exclusive"
+            accessibilityLabel="Drop your TikTok video file here, or click to choose it"
+            accept="video/*"
+            onChange={(event) => {
+              // Snapshot before resetting: clearing `value` is what lets a
+              // merchant re-pick the same file after a failed attempt, and the
+              // file list is emptied by that reset.
+              const zone = event.currentTarget;
+              const picked = Array.from(zone.files ?? []);
+              zone.value = "";
+              if (picked.length > 0) void handleFiles(picked);
+            }}
+            onDropRejected={() =>
+              setNotice("That file isn't a video Shopdart can upload.")
+            }
+            {...(blocked ? { disabled: true, error: blocked } : {})}
+          />
+
+          {progress !== null && (
+            <s-paragraph>
+              <s-text color="subdued">{progress}% uploaded</s-text>
+            </s-paragraph>
+          )}
+        </s-section>
+      )}
 
       {notice && (
-        <s-section heading="Upload didn't start">
+        <s-section heading="That video wasn't added">
           <s-paragraph>{notice}</s-paragraph>
         </s-section>
       )}
@@ -240,10 +370,7 @@ export default function TikTok() {
                     </s-stack>
                   </s-stack>
                   <s-stack direction="inline" gap="small-200" alignItems="center">
-                    <s-button
-                      href={`/app/videos/${video.id}`}
-                      variant="secondary"
-                    >
+                    <s-button href={`/app/videos/${video.id}`} variant="secondary">
                       {video.tagCount > 0 ? "Edit tags" : "Tag products"}
                     </s-button>
                     <Form method="post">
@@ -258,6 +385,26 @@ export default function TikTok() {
               </s-box>
             ))}
           </s-stack>
+        </s-section>
+      )}
+
+      {verified && (
+        <s-section slot="aside" heading="Account">
+          <s-paragraph>
+            Verified as <s-text type="strong">@{username}</s-text>
+          </s-paragraph>
+          <s-paragraph>
+            <s-text color="subdued">
+              Only posts from this account can be added. Videos you have
+              already added stay in your library if you disconnect.
+            </s-text>
+          </s-paragraph>
+          <Form method="post">
+            <input type="hidden" name="intent" value="disconnect" />
+            <s-button type="submit" variant="tertiary">
+              Disconnect
+            </s-button>
+          </Form>
         </s-section>
       )}
 

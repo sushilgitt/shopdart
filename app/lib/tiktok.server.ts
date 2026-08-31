@@ -95,6 +95,50 @@ export function parseTikTokUrl(input: string): TikTokPost | null {
   return null;
 }
 
+/**
+ * Normalises anything a merchant might type for their account into a bare
+ * handle: `acme`, `@acme`, `tiktok.com/@acme` and the full profile URL all
+ * collapse to `acme`.
+ *
+ * Returns null rather than guessing. A handle we cannot parse cleanly must not
+ * become a claim, because everything downstream compares against it.
+ */
+export function parseHandle(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+
+  let candidate = raw;
+
+  if (/tiktok.com/i.test(raw)) {
+    try {
+      const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+      if (!/(^|.)tiktok.com$/i.test(url.hostname)) return null;
+      const first = url.pathname.split("/").filter(Boolean)[0] ?? "";
+      if (!first.startsWith("@")) return null;
+      candidate = first;
+    } catch {
+      return null;
+    }
+  }
+
+  candidate = candidate.replace(/^@/, "");
+
+  // TikTok handles are 2-24 characters of letters, digits, underscore and dot.
+  return /^[A-Za-z0-9._]{2,24}$/.test(candidate) ? candidate : null;
+}
+
+/** Pulls the handle out of an oEmbed `author_url` such as https://www.tiktok.com/@acme. */
+export function handleFromAuthorUrl(authorUrl?: string | null): string | null {
+  if (!authorUrl) return null;
+  return parseHandle(authorUrl);
+}
+
+/** Case-insensitive handle comparison. TikTok handles are not case sensitive. */
+export function sameHandle(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 /** True for the opaque share links that need a redirect to resolve. */
 export function isShortLink(input: string): boolean {
   const raw = input.trim();

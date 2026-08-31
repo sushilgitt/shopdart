@@ -58,8 +58,16 @@ country where TikTok is blocked, and India alone is ~31% of this market's
 installs. `/app/tiktok` therefore takes the post link for provenance and the
 original file for playback, and what comes out is an ordinary Bunny-hosted video
 with full autoplay and in-player checkout. The only thing given up is automatic
-library sync. Ownership is attested rather than proven — unlike YouTube, TikTok
-exposes no description field that could carry a verification code.
+library sync.
+
+Ownership is proven, not asserted. TikTok offers no `mine=true` and no bio
+field to read, but oEmbed does return a post's caption — so the merchant
+publishes a derived code in a caption on their own account and we read it back,
+the same trust model as a DNS TXT record. Every import afterwards is checked
+against oEmbed's `author_url`, never the handle in the URL path: TikTok
+resolves a post by its numeric id, so `/@anyone/video/<id>` works regardless of
+whose name precedes it. When TikTok cannot be reached the import is refused
+rather than allowed, because "we could not check" is not "it is yours".
 
 **YouTube is an embed, and that is the exception.** Their terms forbid
 re-hosting, so those rows carry no Bunny asset and the storefront runs YouTube's

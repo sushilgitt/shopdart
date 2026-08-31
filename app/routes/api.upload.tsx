@@ -8,12 +8,16 @@ import {
   beginUpload,
   type UploadOrigin,
 } from "../lib/video.server";
+import { titleFromCaption } from "../lib/tiktok.server";
 import {
-  fetchOEmbed,
-  isShortLink,
-  resolvePost,
-  titleFromCaption,
-} from "../lib/tiktok.server";
+  TikTokNotConnectedError,
+  TikTokNotVerifiedError,
+  TikTokOwnershipError,
+  TikTokUnreachableError,
+  assertOwnedPost,
+  captionFor,
+  markSynced,
+} from "../lib/tiktok-sync.server";
 
 /**
  * Allocates a Bunny video slot and returns signed TUS upload credentials.
@@ -42,37 +46,64 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   let origin: UploadOrigin = { title };
 
-  // A TikTok link is optional. When one is given it is resolved before any
-  // Bunny asset is allocated, so a typo costs nothing and leaves nothing
-  // behind.
+  // A TikTok link turns this into an import from the merchant's own account,
+  // and that claim is checked here rather than in the page. This endpoint is
+  // reachable directly by anyone holding a session, so a UI-side check would
+  // be decoration.
+  //
+  // Everything below runs before a Bunny asset is allocated, so a rejected
+  // link costs nothing and leaves nothing behind.
   if (sourceUrl) {
-    const post = await resolvePost(sourceUrl);
-    if (!post) {
+    let post;
+    try {
+      post = await assertOwnedPost(shop, sourceUrl);
+    } catch (error) {
+      if (error instanceof TikTokNotConnectedError) {
+        return Response.json({
+          ok: false,
+          error:
+            "Connect your TikTok account first, so Shopdart knows which videos are yours.",
+        });
+      }
+      if (error instanceof TikTokNotVerifiedError) {
+        return Response.json({
+          ok: false,
+          error:
+            "Finish verifying your TikTok account before adding videos from it.",
+        });
+      }
+      if (error instanceof TikTokOwnershipError) {
+        return Response.json({ ok: false, error: error.message });
+      }
+      if (error instanceof TikTokUnreachableError) {
+        // Deliberately a refusal, not a pass. Ownership is established by
+        // reading TikTok; when that read fails the question is unanswered, and
+        // allowing the import anyway would reopen the hole this check closes.
+        return Response.json({ ok: false, error: error.message });
+      }
       return Response.json({
         ok: false,
-        error: isShortLink(sourceUrl)
-          ? "Couldn't open that short TikTok link. Open the post on tiktok.com and paste the link from your browser's address bar instead."
-          : "That doesn't look like a TikTok post link. It should look like https://www.tiktok.com/@yourname/video/1234567890.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "That TikTok link could not be checked.",
       });
     }
 
-    // Best effort, and deliberately not awaited on for correctness: oEmbed is
-    // a call to tiktok.com, which a large part of the world cannot reach. A
-    // merchant whose server is blocked keeps every part of this flow except
-    // the automatic title.
-    const meta = await fetchOEmbed(post.url);
+    const caption = await captionFor(post.url);
 
     origin = {
       source: VideoSource.TIKTOK,
       sourceRef: post.videoId,
       sourceUrl: post.url,
-      caption: meta?.title ?? null,
-      title: title.trim() || titleFromCaption(meta?.title) || undefined,
+      caption,
+      title: title.trim() || titleFromCaption(caption) || undefined,
     };
   }
 
   try {
     const { video, upload } = await beginUpload(shop, fileName, origin);
+    if (origin.source === VideoSource.TIKTOK) await markSynced(shop.id);
     return Response.json({ ok: true, videoId: video.id, upload });
   } catch (error) {
     if (error instanceof DuplicateSourceError) {

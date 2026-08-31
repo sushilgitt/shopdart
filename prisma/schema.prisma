@@ -102,6 +102,17 @@ model Shop {
   // a channel can never be attached by simply naming it.
   ytVerifiedAt        DateTime?
 
+  // TikTok. There is no OAuth here: the Display API needs a developer app that
+  // merchants cannot be asked to create, and it returns no video file anyway.
+  // Ownership is therefore proven the way YouTube's is — a code only the
+  // account holder can publish — and enforced on every import.
+  ttUsername     String?
+  // Set once the verification code was found in a post's caption on this
+  // account. Importing refuses to run without it, so a handle can never be
+  // attached by simply naming it.
+  ttVerifiedAt   DateTime?
+  ttLastSyncedAt DateTime?
+
   videos  Video[]
   widgets Widget[]
   events  VideoEvent[]
