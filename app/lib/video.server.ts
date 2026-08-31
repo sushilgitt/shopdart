@@ -38,6 +38,29 @@ export async function assertCanAddVideo(shop: Shop): Promise<void> {
   if (used >= limit) throw new PlanLimitError(used, limit);
 }
 
+export class DuplicateSourceError extends Error {
+  constructor(readonly videoId: string) {
+    super("That post is already in your library.");
+    this.name = "DuplicateSourceError";
+  }
+}
+
+/**
+ * Where a video came from, when it did not simply arrive as a file.
+ *
+ * Every field is optional because the common case — a merchant dragging an MP4
+ * onto the drop zone — has no provenance to record at all.
+ */
+export interface UploadOrigin {
+  source?: VideoSource;
+  /** External identity, e.g. the TikTok post id. Ignored for plain uploads. */
+  sourceRef?: string | null;
+  /** Permalink back to the original post, shown in the admin. */
+  sourceUrl?: string | null;
+  caption?: string | null;
+  title?: string;
+}
+
 /**
  * Allocates a Bunny video and returns credentials for a direct
  * browser-to-Bunny upload.
@@ -45,47 +68,90 @@ export async function assertCanAddVideo(shop: Shop): Promise<void> {
  * The Video row is created up front in UPLOADING so the library shows the item
  * immediately and the plan cap accounts for it. If the browser never completes
  * the upload the row is reaped by `reapStalledUploads`.
+ *
+ * `origin` is what makes this usable for sources that have no ingest API of
+ * their own. A TikTok post cannot be fetched — no tier of their API returns a
+ * file — so the merchant supplies the original and it travels this same path,
+ * carrying the post id and permalink alongside the bytes. The result is an
+ * ordinary hosted video that happens to know where it came from.
  */
 export async function beginUpload(
   shop: Shop,
   fileName: string,
-  title?: string,
+  origin: UploadOrigin = {},
 ): Promise<{ video: Video; upload: PresignedUpload }> {
-  await assertCanAddVideo(shop);
+  const source = origin.source ?? VideoSource.UPLOAD;
 
-  const displayTitle = title?.trim() || stripExtension(fileName);
+  // Deliberately null for UPLOAD, whatever the caller passed.
+  //
+  // `@@unique([shopId, source, sourceRef])` is an external-identity dedupe
+  // key: it is what stops the same Instagram reel or TikTok post being added
+  // twice. A direct upload has no external identity. Two files that happen to
+  // share a name are two different videos, and the same file uploaded again is
+  // a deliberate act — usually a retry after something failed.
+  //
+  // Storing the filename here put uploads under that index anyway, so a shop
+  // could upload any given filename exactly once, ever. Worse, the row left
+  // behind by a failed attempt made every retry of that file collide. The
+  // filename still reaches the merchant as the title.
+  const sourceRef =
+    source === VideoSource.UPLOAD ? null : origin.sourceRef?.trim() || null;
+
+  // A post already in the library is a mistake worth naming, not a silent
+  // second copy. An archived one is revived below instead — it cannot simply
+  // be inserted again, because the unique index would reject it.
+  let existing: Video | null = null;
+  if (sourceRef) {
+    existing = await prisma.video.findFirst({
+      where: { shopId: shop.id, source, sourceRef },
+    });
+    if (existing && !existing.archivedAt) {
+      throw new DuplicateSourceError(existing.id);
+    }
+  }
+
+  // Reviving an archived row returns the library to a size it already held, so
+  // it does not need room under the cap.
+  if (!existing) await assertCanAddVideo(shop);
+
+  const displayTitle = origin.title?.trim() || stripExtension(fileName);
   const bunny = await createBunnyVideo(displayTitle);
+
+  const fields = {
+    title: displayTitle,
+    caption: origin.caption?.trim() || null,
+    sourceUrl: origin.sourceUrl?.trim() || null,
+    bunnyVideoId: bunny.guid,
+    status: VideoStatus.UPLOADING,
+  };
 
   let video: Video;
   try {
-    video = await prisma.video.create({
-      data: {
-        shopId: shop.id,
-        source: VideoSource.UPLOAD,
-        // Deliberately null.
-        //
-        // `@@unique([shopId, source, sourceRef])` is an external-identity
-        // dedupe key: it is what stops the same Instagram reel or YouTube
-        // video being imported twice. A direct upload has no external
-        // identity. Two files that happen to share a name are two different
-        // videos, and the same file uploaded again is a deliberate act —
-        // usually a retry after something failed.
-        //
-        // Storing the filename here put uploads under that index anyway, so a
-        // shop could upload any given filename exactly once, ever. Worse, the
-        // row left behind by a failed attempt made every retry of that file
-        // collide, which is the state this shop was stuck in. The filename
-        // still reaches the merchant as the title.
-        sourceRef: null,
-        title: displayTitle,
-        bunnyVideoId: bunny.guid,
-        status: VideoStatus.UPLOADING,
-      },
-    });
+    video = existing
+      ? await prisma.video.update({
+          where: { id: existing.id },
+          data: {
+            ...fields,
+            archivedAt: null,
+            errorMessage: null,
+            // Everything below described the Bunny asset that archiveVideo
+            // deleted. Left in place it would publish a poster and an MP4 that
+            // both 404 until the new encode happens to overwrite them.
+            posterUrl: null,
+            mp4Url: null,
+            hlsUrl: null,
+            durationSec: null,
+            width: null,
+            height: null,
+            sizeBytes: null,
+          },
+        })
+      : await prisma.video.create({
+          data: { shopId: shop.id, source, sourceRef, ...fields },
+        });
   } catch (error) {
     // The Bunny asset is allocated before the row exists and is billed per
-    // minute stored. Without this, every failed insert leaked one — the
-    // filename collision above quietly created a fresh orphan on each retry.
+    // minute stored. Without this, every failed write leaks one.
     try {
       await deleteBunnyVideo(bunny.guid);
     } catch (cleanupError) {

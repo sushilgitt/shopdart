@@ -1,9 +1,11 @@
 # Shopdart
 
 Shoppable videos for Shopify. Merchants bring in reels from their own Instagram
-account or upload video directly, tag the products that appear, and drop the
-result onto their storefront as a gallery, carousel, stories bar, floating
-player, product-page block or popup. Shoppers buy from inside the player.
+account, videos from their own YouTube channel, or upload files directly —
+including the ones they posted to TikTok — tag the products that appear, and
+drop the result onto their storefront as a gallery, carousel, stories bar,
+floating player, product-page block or popup. Shoppers buy from inside the
+player.
 
 Competing with ReelUp, Tolstoy, Quinn, Videowise and Vimotia.
 
@@ -48,14 +50,23 @@ npm run dev
 
 ## Decisions worth knowing
 
-**No TikTok.** Two reasons. India is ~31% of this market's installs and TikTok
-has been banned there since 2020, alongside ten other countries. More
-fundamentally, no official TikTok API returns a downloadable file — you only get
-an embed iframe, which makes product tags, forced autoplay and in-player
-add-to-cart impossible. The same limitation applies to YouTube Shorts. Only the
-Instagram Graph API (`media_url`) and direct upload yield a real MP4 we can
-re-host, which is why those are the two early sources. `VideoSource` is an
-adapter boundary so embed-only sources can be added later as a degraded tier.
+**TikTok, but not as an embed.** No tier of TikTok's API returns a video file.
+That is a deliberate content-protection decision on their side rather than a gap
+to route around, so the choice was an iframe embed or the merchant's own file.
+The embed loses on the thing that matters most here: it renders blank in every
+country where TikTok is blocked, and India alone is ~31% of this market's
+installs. `/app/tiktok` therefore takes the post link for provenance and the
+original file for playback, and what comes out is an ordinary Bunny-hosted video
+with full autoplay and in-player checkout. The only thing given up is automatic
+library sync. Ownership is attested rather than proven — unlike YouTube, TikTok
+exposes no description field that could carry a verification code.
+
+**YouTube is an embed, and that is the exception.** Their terms forbid
+re-hosting, so those rows carry no Bunny asset and the storefront runs YouTube's
+iframe player. Product cards still work, because they are ours and sit over the
+frame; MP4-first playback and forced autoplay do not. `provider` in the
+storefront payload is derived from whether we hold the file, never from
+`source` — the same source can arrive by either route.
 
 **No public-URL scraper.** ReelUp resolves arbitrary pasted Instagram links.
 That requires an unofficial scraper with ongoing breakage and ToS risk. We sync

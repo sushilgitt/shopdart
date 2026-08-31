@@ -620,6 +620,36 @@
       );
     }
 
+    // MP4 first. For clips of this length it reaches the first frame sooner
+    // than HLS and needs no player library at all. HLS is the fallback for
+    // anything long enough for adaptive bitrate to be worth the bytes.
+    var file = video.mp4 || video.hls || "";
+
+    /**
+     * A hosted tile with nothing to play.
+     *
+     * Reachable whenever a payload written by a newer server meets a copy of
+     * this script cached from before that provider existed: buildTile cannot
+     * recognise the provider, falls through to here, and an empty src renders
+     * a permanently blank <video> covering the poster.
+     *
+     * Showing the poster and the product card instead keeps the tile
+     * shoppable. The products come from our own payload, not from whoever
+     * hosts the video, so they work whether or not the file ever arrives.
+     */
+    if (!file) {
+      // Nothing here responds to a press, so it must not announce itself as a
+      // button. The product cards inside stay focusable on their own.
+      tile.removeAttribute("role");
+      tile.removeAttribute("tabindex");
+      var still = buildProducts(video, config, shop, widget);
+      if (still) tile.appendChild(still);
+      tile._load = function () {};
+      tile._play = function () {};
+      tile._pause = function () {};
+      return tile;
+    }
+
     var media = el("video", "shopdart__media shopdart__video", {
       playsinline: "",
       preload: "none",
@@ -642,10 +672,7 @@
     tile._load = function () {
       if (media.dataset.loaded) return;
       media.dataset.loaded = "1";
-      // MP4 first. For clips of this length it reaches the first frame sooner
-      // than HLS and needs no player library at all. HLS is the fallback for
-      // anything long enough for adaptive bitrate to be worth the bytes.
-      media.src = video.mp4 || video.hls || "";
+      media.src = file;
     };
 
     tile._play = function () {

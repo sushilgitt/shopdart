@@ -1,7 +1,19 @@
 import type { ActionFunctionArgs } from "react-router";
+import { VideoSource } from "@prisma/client";
 import { authenticate } from "../shopify.server";
 import { ensureShop } from "../lib/shop.server";
-import { PlanLimitError, beginUpload } from "../lib/video.server";
+import {
+  DuplicateSourceError,
+  PlanLimitError,
+  beginUpload,
+  type UploadOrigin,
+} from "../lib/video.server";
+import {
+  fetchOEmbed,
+  isShortLink,
+  resolvePost,
+  titleFromCaption,
+} from "../lib/tiktok.server";
 
 /**
  * Allocates a Bunny video slot and returns signed TUS upload credentials.
@@ -26,11 +38,51 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const form = await request.formData();
   const fileName = String(form.get("fileName") ?? "video.mp4");
   const title = String(form.get("title") ?? "");
+  const sourceUrl = String(form.get("sourceUrl") ?? "").trim();
+
+  let origin: UploadOrigin = { title };
+
+  // A TikTok link is optional. When one is given it is resolved before any
+  // Bunny asset is allocated, so a typo costs nothing and leaves nothing
+  // behind.
+  if (sourceUrl) {
+    const post = await resolvePost(sourceUrl);
+    if (!post) {
+      return Response.json({
+        ok: false,
+        error: isShortLink(sourceUrl)
+          ? "Couldn't open that short TikTok link. Open the post on tiktok.com and paste the link from your browser's address bar instead."
+          : "That doesn't look like a TikTok post link. It should look like https://www.tiktok.com/@yourname/video/1234567890.",
+      });
+    }
+
+    // Best effort, and deliberately not awaited on for correctness: oEmbed is
+    // a call to tiktok.com, which a large part of the world cannot reach. A
+    // merchant whose server is blocked keeps every part of this flow except
+    // the automatic title.
+    const meta = await fetchOEmbed(post.url);
+
+    origin = {
+      source: VideoSource.TIKTOK,
+      sourceRef: post.videoId,
+      sourceUrl: post.url,
+      caption: meta?.title ?? null,
+      title: title.trim() || titleFromCaption(meta?.title) || undefined,
+    };
+  }
 
   try {
-    const { video, upload } = await beginUpload(shop, fileName, title);
+    const { video, upload } = await beginUpload(shop, fileName, origin);
     return Response.json({ ok: true, videoId: video.id, upload });
   } catch (error) {
+    if (error instanceof DuplicateSourceError) {
+      return Response.json({
+        ok: false,
+        error:
+          "That TikTok post is already in your library. Remove it there first if you want to replace the file.",
+      });
+    }
+
     if (error instanceof PlanLimitError) {
       return Response.json({
         ok: false,

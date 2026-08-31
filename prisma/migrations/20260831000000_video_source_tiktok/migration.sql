@@ -1,0 +1,11 @@
+-- AlterEnum
+-- Additive and nullable in effect: no existing row changes, because nothing
+-- selects TIKTOK until the admin can create one.
+--
+-- Placed after YOUTUBE rather than appended so the database's value order
+-- matches the schema's, which keeps `prisma migrate diff` quiet.
+--
+-- Postgres 12+ permits ADD VALUE inside a transaction — which is how
+-- `prisma migrate deploy` runs every migration — provided the new value is
+-- not USED in that same transaction. Nothing here does.
+ALTER TYPE "VideoSource" ADD VALUE 'TIKTOK' AFTER 'YOUTUBE';

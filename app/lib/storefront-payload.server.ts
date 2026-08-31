@@ -91,6 +91,27 @@ export interface StorefrontProduct {
 }
 
 /**
+ * How the player should play this video.
+ *
+ * Derived from whether we hold the file, not from where the video came from.
+ * `source` records provenance — that the merchant found this clip on TikTok,
+ * say — while the provider answers a different question: is there a file on
+ * our own CDN to point a <video> at?
+ *
+ * Those two diverge the moment a source can arrive by more than one route. A
+ * TikTok post the merchant uploaded the original file for is, to the player,
+ * an ordinary hosted video; keying playback off `source` would publish it as
+ * an embed carrying no embed id, and the storefront would render nothing.
+ */
+function providerFor(video: {
+  bunnyVideoId: string | null;
+  source: string;
+}): "bunny" | "youtube" {
+  if (video.bunnyVideoId) return "bunny";
+  return video.source === "YOUTUBE" ? "youtube" : "bunny";
+}
+
+/**
  * Builds the payload for one shop.
  *
  * Every published widget for the shop is returned in a single document rather
@@ -160,11 +181,11 @@ export async function buildStorefrontPayload(
           .map((entry) => ({
             id: entry.video.id,
             title: entry.video.title ?? "",
-            provider: (entry.video.source === "YOUTUBE"
-              ? "youtube"
-              : "bunny") as "bunny" | "youtube",
+            provider: providerFor(entry.video),
             embedId:
-              entry.video.source === "YOUTUBE" ? entry.video.sourceRef : null,
+              providerFor(entry.video) === "youtube"
+                ? entry.video.sourceRef
+                : null,
             poster: entry.video.posterUrl,
             mp4: entry.video.mp4Url,
             hls: entry.video.hlsUrl,

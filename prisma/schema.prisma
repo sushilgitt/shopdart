@@ -91,8 +91,8 @@ model Shop {
 
   // YouTube. Read-only over a server-side API key against the merchant's
   // public channel — no OAuth, so there is no token to store or refresh.
-  ytChannelId    String?
-  ytChannelTitle String?
+  ytChannelId         String?
+  ytChannelTitle      String?
   // Cached because resolving a handle costs an extra quota unit on every
   // browse, and the mapping never changes for a given channel.
   ytUploadsPlaylistId String?
@@ -120,10 +120,21 @@ model Shop {
 enum VideoSource {
   UPLOAD
   INSTAGRAM
-  // Reserved for phase 2. Both are embed-only sources: neither platform
-  // exposes a downloadable file, so neither can support in-player product
-  // tagging or forced autoplay.
+  // Embed-only. YouTube exposes no downloadable file, so the storefront runs
+  // their iframe player instead of one of ours. Product tagging still works —
+  // the cards are ours and sit over the frame — but MP4-first playback and
+  // forced autoplay do not.
   YOUTUBE
+  // Provenance, not a delivery route.
+  //
+  // No tier of TikTok's API returns a video file, so a TikTok post reaches us
+  // the only way it can: the merchant supplies the original they filmed, it
+  // goes to Bunny, and it plays exactly like any other upload. Recording the
+  // source buys two things — the admin can link back to the post, and
+  // @@unique([shopId, source, sourceRef]) stops the same post being added
+  // twice, which a bare UPLOAD row cannot do.
+  TIKTOK
+  // Reserved. Embed-only, same shape as YouTube.
   FACEBOOK
 }
 
@@ -140,9 +151,9 @@ model Video {
   shopId String
   shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
-  source VideoSource @default(UPLOAD)
-  // External identity for imported videos: the Instagram media id, or the
-  // YouTube video id. Null for direct uploads, which have no external
+  source    VideoSource @default(UPLOAD)
+  // External identity for imported videos: the Instagram media id, the YouTube
+  // video id, or the TikTok post id. Null for direct uploads, which have no external
   // identity — the @@unique below exists to stop the same remote video being
   // imported twice, and uploads must not be deduped by it.
   sourceRef String?
@@ -291,10 +302,10 @@ model Placement {
   widgetId String
   widget   Widget @relation(fields: [widgetId], references: [id], onDelete: Cascade)
 
-  target PlacementTarget
+  target      PlacementTarget
   // Scope to one resource, e.g. a single product GID. Null = every page of
   // that target type.
-  targetRef String?
+  targetRef   String?
   // Free-form path pattern when target is CUSTOM, e.g. "/pages/lookbook".
   pathPattern String?
 
