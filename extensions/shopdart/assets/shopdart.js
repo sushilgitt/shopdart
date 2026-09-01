@@ -750,16 +750,31 @@
     tile._load = function () {
       if (frame || failed || !video.embedId) return;
 
+      // autoplay is asked for in the URL rather than driven by a postMessage
+      // after the fact.
+      //
+      // The player used to be built with autoplay=0 and started with
+      // post("play"), which only ran once a message had arrived from TikTok.
+      // Every part of playback therefore depended on the message channel
+      // behaving exactly as assumed — and when it did not, the video loaded,
+      // sat on its first frame and never played. Asking the player to start
+      // itself removes that dependency: postMessage is now only used to pause,
+      // and to follow playback position for timed product tags.
+      //
+      // muted is not optional. Browsers refuse unmuted autoplay outright, and
+      // the player reports that as error 3002 rather than simply playing
+      // silently.
       frame = el("iframe", "shopdart__media shopdart__embed", {
         src:
           "https://www.tiktok.com/player/v1/" +
           encodeURIComponent(video.embedId) +
-          "?autoplay=0&muted=1&controls=1&progress_bar=1&loop=" +
+          "?autoplay=" +
+          (config.autoplay !== false ? "1" : "0") +
+          "&muted=1&controls=1&progress_bar=1&loop=" +
           (config.loop !== false ? "1" : "0") +
           "&music_info=0&description=0&rel=0&native_context_menu=0",
         allow: "autoplay; encrypted-media; fullscreen",
         title: video.title || "Shoppable video",
-        loading: "lazy",
         frameborder: "0",
       });
       // Attached before the frame exists, so a player that announces itself
@@ -767,13 +782,39 @@
       addEventListener("message", onMessage);
       tile.appendChild(frame);
 
-      // Silence means the frame never loaded — the blocked-country case, which
-      // reports no error of its own. Twelve seconds rather than eight: a slow
-      // mobile connection is not a blocked one, and the cost of being wrong
-      // here is replacing a working video with a still image.
-      setTimeout(function () {
-        if (!ready) degrade();
-      }, 12000);
+      /**
+       * Ask the network the question directly, rather than inferring it.
+       *
+       * Falling back used to be triggered by silence on the message channel,
+       * which conflated two unrelated things: whether TikTok is reachable, and
+       * whether their postMessage protocol works the way we expect. A quiet
+       * channel meant a working video was torn down after twelve seconds, and
+       * a genuinely blocked shopper stared at a blank frame for those twelve
+       * seconds first.
+       *
+       * A no-cors request for a tiny TikTok asset answers only the question
+       * that matters. It rejects almost immediately where TikTok is blocked,
+       * and resolves opaquely where it is not. A browser extension blocking
+       * tiktok.com reads as unreachable too, which is the correct answer for
+       * that shopper — the iframe would not have loaded either.
+       */
+      // AbortController rather than AbortSignal.timeout: this file runs on
+      // every shopper's browser, and the latter is recent enough to be absent
+      // on phones that are otherwise perfectly capable.
+      var probe = window.AbortController ? new AbortController() : null;
+      if (probe) {
+        setTimeout(function () {
+          probe.abort();
+        }, 6000);
+      }
+
+      fetch("https://www.tiktok.com/favicon.ico", {
+        mode: "no-cors",
+        cache: "no-store",
+        signal: probe ? probe.signal : undefined,
+      }).catch(function () {
+        degrade();
+      });
     };
 
     tile._play = function () {
