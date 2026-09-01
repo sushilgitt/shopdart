@@ -558,7 +558,11 @@
             },
             onStateChange: function (event) {
               if (event.data === YT.PlayerState.PLAYING) {
+                tile.dataset.playing = "true";
                 markViewed();
+              }
+              if (event.data === YT.PlayerState.PAUSED) {
+                tile.dataset.playing = "false";
               }
               if (event.data === YT.PlayerState.ENDED) {
                 track(shop, "VIEW_COMPLETE", widget.id, video.id);
@@ -579,7 +583,7 @@
       wantsPlay = true;
       tile._load();
       if (player && player.playVideo) player.playVideo();
-      tile.dataset.playing = "true";
+      // data-playing is set from onStateChange, once YouTube confirms it.
       startSync();
     };
 
@@ -653,6 +657,9 @@
       failed = true;
       if (frame) frame.remove();
       frame = null;
+      // Nothing is playing, so the poster must come back out from under
+      // [data-playing].
+      tile.dataset.playing = "false";
       if (video.embedId) {
         var link = el("a", "shopdart__cta shopdart__embed-fallback", {
           href: "https://www.tiktok.com/@_/video/" + video.embedId,
@@ -699,10 +706,17 @@
         // 1 = playing, 0 = ended. Documented alongside -1 init, 2 paused,
         // 3 buffering, none of which we act on.
         if (data.value === 1) {
+          // Hiding the poster is driven from here rather than from _play,
+          // because [data-playing] is what fades it out and a player that
+          // never loads would otherwise leave a hidden poster over a black
+          // tile — which is precisely what a blocked shopper saw.
+          tile.dataset.playing = "true";
           if (!tile.dataset.viewed) {
             tile.dataset.viewed = "1";
             track(shop, "VIEW_START", widget.id, video.id);
           }
+        } else if (data.value === 2 || data.value === 3) {
+          tile.dataset.playing = "false";
         } else if (data.value === 0) {
           track(shop, "VIEW_COMPLETE", widget.id, video.id);
         }
@@ -746,7 +760,7 @@
       wantsPlay = true;
       tile._load();
       if (ready) post("play");
-      tile.dataset.playing = "true";
+      // Deliberately not setting data-playing here — see onStateChange.
     };
 
     tile._pause = function () {
@@ -843,6 +857,18 @@
       media.src = file;
     };
 
+    // [data-playing] fades the poster out, so it is set when playback really
+    // begins rather than when it is requested. Asking optimistically defeated
+    // the promise rejection below: a refused autoplay hid the poster anyway
+    // and left the shopper looking at a stalled black frame.
+    media.addEventListener("playing", function () {
+      tile.dataset.playing = "true";
+      if (!tile.dataset.viewed) {
+        tile.dataset.viewed = "1";
+        track(shop, "VIEW_START", widget.id, video.id);
+      }
+    });
+
     tile._play = function () {
       tile._load();
       var attempt = media.play();
@@ -851,11 +877,6 @@
           // Autoplay refused — leave the poster up rather than showing a
           // stalled black frame.
         });
-      }
-      tile.dataset.playing = "true";
-      if (!tile.dataset.viewed) {
-        tile.dataset.viewed = "1";
-        track(shop, "VIEW_START", widget.id, video.id);
       }
     };
 
