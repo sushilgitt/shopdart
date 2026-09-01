@@ -644,13 +644,21 @@
     if (products) tile.appendChild(products);
 
     /**
-     * Falls back to the poster and the product card.
+     * Falls back to the cover and the product card.
      *
      * Reached when TikTok reports an error, or when the player never signals
      * ready — which is what a shopper in a country that blocks TikTok
-     * experiences, and that is a large share of some merchants' traffic. The
-     * products come from our own payload, so the tile stays shoppable even
-     * though the video cannot play.
+     * experiences, and that is a large share of some merchants' traffic.
+     *
+     * Deliberately offers no way out to TikTok. An earlier version put a
+     * "Watch on TikTok" button here, which was the one thing a shoppable
+     * widget must never do: it took a shopper who was already looking at the
+     * merchant's products and sent them to a different app to watch a video.
+     * A sale cannot follow them there.
+     *
+     * What remains is a still frame from the video with the product card over
+     * it, priced and buyable, because those come from our own payload rather
+     * than from TikTok. The tile stops being a video and stays a storefront.
      */
     function degrade() {
       if (failed) return;
@@ -660,18 +668,6 @@
       // Nothing is playing, so the poster must come back out from under
       // [data-playing].
       tile.dataset.playing = "false";
-      if (video.embedId) {
-        var link = el("a", "shopdart__cta shopdart__embed-fallback", {
-          href: "https://www.tiktok.com/@_/video/" + video.embedId,
-          target: "_blank",
-          rel: "noopener",
-        });
-        link.textContent = "Watch on TikTok";
-        link.addEventListener("click", function (event) {
-          event.stopPropagation();
-        });
-        tile.appendChild(link);
-      }
     }
 
     function post(type) {

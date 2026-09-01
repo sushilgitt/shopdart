@@ -182,6 +182,10 @@ export default function TikTok() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const atLimit = used >= limit;
+  // Videos with no file of our own. They depend on TikTok being reachable from
+  // wherever the shopper is, which is worth saying out loud rather than
+  // letting a merchant discover it from a support ticket.
+  const embedOnly = videos.filter((video) => !video.hosted).length;
 
   // Why a file cannot be accepted right now, shown on the drop zone itself so
   // the reason sits beside the control the merchant just found unresponsive.
@@ -335,6 +339,21 @@ export default function TikTok() {
         <s-section
           heading={`${videos.length} TikTok video${videos.length === 1 ? "" : "s"}`}
         >
+          {embedOnly > 0 && (
+            <s-banner tone="warning" heading="Some videos won't play everywhere">
+              <s-paragraph>
+                {embedOnly === 1 ? "One video plays" : `${embedOnly} videos play`}{" "}
+                through TikTok&rsquo;s own player. Shoppers in countries where
+                TikTok is blocked — India among them — see the cover image and
+                your product card, and can still buy, but the video will not
+                play for them.
+              </s-paragraph>
+              <s-paragraph>
+                Uploading your own file on a video fixes that: it plays
+                everywhere, and it autoplays as shoppers scroll.
+              </s-paragraph>
+            </s-banner>
+          )}
           <s-stack direction="block" gap="small-200">
             {videos.map((video) => (
               <s-box
@@ -367,7 +386,7 @@ export default function TikTok() {
                       <s-text type="strong">{video.title}</s-text>
                       <s-text color="subdued">
                         {statusLabel(video.status)}
-                        {video.hosted ? "" : " · plays from TikTok"}
+                        {video.hosted ? "" : " · needs TikTok to play"}
                         {` · ${video.tagCount} product${video.tagCount === 1 ? "" : "s"} tagged`}
                       </s-text>
                       {video.errorMessage && (

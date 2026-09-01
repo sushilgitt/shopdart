@@ -353,19 +353,6 @@
   cursor: default;
 }
 
-/* Shown when an embed cannot play at all — most often because the platform is
-   blocked where the shopper is. The poster and the product card remain, so the
-   tile is still shoppable; this is the way out to the original post. */
-.shopdart__embed-fallback {
-  position: absolute;
-  left: 50%;
-  /* Centred rather than pinned to the bottom, where the product card sits.
-     The two overlapped, and the card is the more important of the pair. */
-  top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 3;
-  white-space: nowrap;
-}
 
 /* --- variant picker ----------------------------------------------------- */
 
