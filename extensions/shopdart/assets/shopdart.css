@@ -359,8 +359,10 @@
 .shopdart__embed-fallback {
   position: absolute;
   left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
+  /* Centred rather than pinned to the bottom, where the product card sits.
+     The two overlapped, and the card is the more important of the pair. */
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 3;
   white-space: nowrap;
 }

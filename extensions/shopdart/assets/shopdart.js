@@ -616,14 +616,19 @@
     });
 
     if (video.poster) {
-      tile.appendChild(
-        el("img", "shopdart__media shopdart__poster", {
-          src: video.poster,
-          alt: "",
-          loading: "lazy",
-          decoding: "async",
-        })
-      );
+      var poster = el("img", "shopdart__media shopdart__poster", {
+        src: video.poster,
+        alt: "",
+        loading: "lazy",
+        decoding: "async",
+      });
+      // A cover that will not load leaves a broken-image glyph over the tile.
+      // Dropping it is better: the tile's own background shows through and the
+      // fallback link stays legible on top of it.
+      poster.addEventListener("error", function () {
+        poster.remove();
+      });
+      tile.appendChild(poster);
     }
 
     var frame = null;

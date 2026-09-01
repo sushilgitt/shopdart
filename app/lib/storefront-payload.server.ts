@@ -123,6 +123,30 @@ function providerFor(video: {
 }
 
 /**
+ * Where the player should fetch a video's poster.
+ *
+ * Hosted videos already point at our own Bunny CDN. TikTok covers do not: they
+ * live on tiktokcdn hosts that are unreachable wherever TikTok is blocked, and
+ * they carry a signed `x-expires` that outlives nothing. Both failures render
+ * as a black rectangle on the storefront, and the poster is exactly what the
+ * embed's fallback depends on being there.
+ *
+ * Routing them through /img/tiktok/{id} moves the problem to a server that can
+ * reach TikTok and can refresh an expired signature. Falls back to the raw URL
+ * when the app origin is unknown, which only happens outside a deployment.
+ */
+function posterFor(
+  video: { id: string; posterUrl: string | null },
+  provider: "bunny" | "youtube" | "tiktok",
+): string | null {
+  if (provider !== "tiktok") return video.posterUrl;
+  const raw = process.env.SHOPIFY_APP_URL ?? "";
+  const origin = raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  if (!origin) return video.posterUrl;
+  return `${origin}/img/tiktok/${video.id}`;
+}
+
+/**
  * Builds the payload for one shop.
  *
  * Every published widget for the shop is returned in a single document rather
@@ -199,7 +223,7 @@ export async function buildStorefrontPayload(
               providerFor(entry.video) === "bunny"
                 ? null
                 : entry.video.sourceRef,
-            poster: entry.video.posterUrl,
+            poster: posterFor(entry.video, providerFor(entry.video)),
             mp4: entry.video.mp4Url,
             hls: entry.video.hlsUrl,
             duration: entry.video.durationSec,
