@@ -668,6 +668,7 @@
       // Nothing is playing, so the poster must come back out from under
       // [data-playing].
       tile.dataset.playing = "false";
+      removeEventListener("message", onMessage);
     }
 
     function post(type) {
@@ -678,18 +679,37 @@
       );
     }
 
+    /**
+     * Marks the player alive on ANY message from its frame, not only on
+     * onPlayerReady.
+     *
+     * The timeout below tears the player down and shows the fallback, so
+     * whatever decides "alive" has to be generous. Keying it solely on one
+     * message type meant a single mismatch — a renamed event, a shape we did
+     * not expect, a message arriving before the listener attached — would
+     * destroy a working video eight seconds in. That failure is invisible
+     * anywhere TikTok is blocked, because the fallback is what you see there
+     * anyway, and would only appear for the shoppers it actually harms.
+     *
+     * Any x-tiktok-player message from this frame proves the player booted,
+     * which is the only thing the timeout needs to know.
+     */
+    function markAlive() {
+      if (ready) return;
+      ready = true;
+      post("mute");
+      if (wantsPlay) post("play");
+    }
+
     function onMessage(event) {
       var data = event.data;
       if (!data || data["x-tiktok-player"] !== true) return;
       // Several tiles can be on one page, so only listen to our own frame.
       if (!frame || event.source !== frame.contentWindow) return;
 
-      if (data.type === "onPlayerReady") {
-        ready = true;
-        post("mute");
-        if (wantsPlay) post("play");
-        return;
-      }
+      markAlive();
+
+      if (data.type === "onPlayerReady") return;
 
       if (data.type === "onCurrentTime") {
         if (products && products._sync && data.value) {
@@ -742,14 +762,18 @@
         loading: "lazy",
         frameborder: "0",
       });
-      tile.appendChild(frame);
+      // Attached before the frame exists, so a player that announces itself
+      // immediately cannot beat the listener into place.
       addEventListener("message", onMessage);
+      tile.appendChild(frame);
 
-      // No onPlayerReady means the frame never loaded — the blocked-country
-      // case, which reports no error of its own.
+      // Silence means the frame never loaded — the blocked-country case, which
+      // reports no error of its own. Twelve seconds rather than eight: a slow
+      // mobile connection is not a blocked one, and the cost of being wrong
+      // here is replacing a working video with a still image.
       setTimeout(function () {
         if (!ready) degrade();
-      }, 8000);
+      }, 12000);
     };
 
     tile._play = function () {
