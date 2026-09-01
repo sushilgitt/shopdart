@@ -698,7 +698,32 @@
       if (ready) return;
       ready = true;
       post("mute");
-      if (wantsPlay) post("play");
+      if (wantsPlay) nudgePlay();
+    }
+
+    /**
+     * Asks the player to start, and keeps asking briefly.
+     *
+     * autoplay=1 in the URL is the primary mechanism and usually enough, but
+     * it is a request rather than a guarantee: the player may not be ready to
+     * act on it the instant it boots, and a browser can decline the first
+     * attempt while allowing a later one. A muted player being asked again a
+     * second later is harmless, so the cheap insurance is worth it.
+     *
+     * Stops as soon as onStateChange reports playing, and gives up after three
+     * tries rather than pestering a player the shopper has deliberately paused.
+     */
+    function nudgePlay() {
+      var attempts = 0;
+      (function attempt() {
+        if (!frame || failed) return;
+        if (tile.dataset.playing === "true") return;
+        if (attempts >= 3) return;
+        attempts += 1;
+        post("mute");
+        post("play");
+        setTimeout(attempt, 1200);
+      })();
     }
 
     function onMessage(event) {
@@ -820,7 +845,7 @@
     tile._play = function () {
       wantsPlay = true;
       tile._load();
-      if (ready) post("play");
+      if (ready) nudgePlay();
       // Deliberately not setting data-playing here — see onStateChange.
     };
 
