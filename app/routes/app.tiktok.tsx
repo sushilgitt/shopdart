@@ -303,8 +303,15 @@ export default function TikTok() {
             <s-text color="subdued">
               Paste the links to your TikTok posts — one per line, up to 25 at a
               time. Shopdart checks each one belongs to @{username}, then adds
-              it below ready to tag and publish. Videos play through
-              TikTok&rsquo;s own player, so nothing needs uploading.
+              it below ready to tag and publish.
+            </s-text>
+          </s-paragraph>
+          <s-paragraph>
+            <s-text color="subdued">
+              Add each video&rsquo;s file afterwards. That is what makes it
+              autoplay as shoppers scroll and play in every country. Without
+              one it falls back to TikTok&rsquo;s player, which shows nothing
+              where TikTok is blocked.
             </s-text>
           </s-paragraph>
           <Form method="post">
@@ -389,6 +396,12 @@ export default function TikTok() {
                         {video.hosted ? "" : " · needs TikTok to play"}
                         {` · ${video.tagCount} product${video.tagCount === 1 ? "" : "s"} tagged`}
                       </s-text>
+                      {!video.hosted && (
+                        <s-text color="subdued">
+                          Add this video&rsquo;s file to make it autoplay and
+                          play everywhere.
+                        </s-text>
+                      )}
                       {video.errorMessage && (
                         <s-text color="subdued">{video.errorMessage}</s-text>
                       )}
@@ -420,8 +433,7 @@ export default function TikTok() {
                         </s-text>
                       ) : (
                         <s-drop-zone
-                          label="Use your own file"
-                          labelAccessibilityVisibility="exclusive"
+                          label="Add file"
                           accessibilityLabel={`Upload your own file for ${video.title} to replace the TikTok player`}
                           accept="video/*"
                           onChange={(event) => {
@@ -484,19 +496,24 @@ export default function TikTok() {
         </s-section>
       )}
 
-      <s-section slot="aside" heading="Use your own file (optional)">
+      <s-section slot="aside" heading="Getting your video files">
         <s-paragraph>
           <s-text color="subdued">
-            Your videos play through TikTok&rsquo;s player by default, which
-            needs no upload. Uploading the original file instead is worth it
-            for two reasons: it autoplays as shoppers scroll, and it keeps
-            playing for visitors in countries where TikTok is blocked.
+            A video with its file plays from Shopdart&rsquo;s own CDN: it
+            autoplays as shoppers scroll, and it plays everywhere, including
+            countries that block TikTok. This is the setup worth aiming for.
           </s-text>
         </s-paragraph>
         <s-paragraph>
           <s-text color="subdued">
-            The best copy is the original you edited before posting — no
-            watermark, full quality. Drop it on any video below to switch.
+            Best is the original you edited before posting — no watermark, full
+            quality. Otherwise open the post in the TikTok app, tap Share, then
+            Save to device; that copy carries a TikTok watermark.
+          </s-text>
+        </s-paragraph>
+        <s-paragraph>
+          <s-text color="subdued">
+            Drop the file on any video below to switch it over.
           </s-text>
         </s-paragraph>
       </s-section>
