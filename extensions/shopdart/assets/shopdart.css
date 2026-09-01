@@ -333,7 +333,7 @@
   }
 }
 
-/* --- youtube embed ------------------------------------------------------ */
+/* --- platform embeds (youtube, tiktok) ---------------------------------- */
 
 /* The iframe replaces this element entirely once YT.Player mounts, so the
    sizing has to live on the tile rather than on the node itself. */
@@ -347,10 +347,22 @@
   z-index: 1;
 }
 
-/* YouTube renders its own controls, so the tile must not swallow the click
-   that reaches them. */
+/* Embedded players render their own controls, so the tile must not swallow
+   the click that reaches them. */
 .shopdart__tile--embed {
   cursor: default;
+}
+
+/* Shown when an embed cannot play at all — most often because the platform is
+   blocked where the shopper is. The poster and the product card remain, so the
+   tile is still shoppable; this is the way out to the original post. */
+.shopdart__embed-fallback {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 3;
+  white-space: nowrap;
 }
 
 /* --- variant picker ----------------------------------------------------- */

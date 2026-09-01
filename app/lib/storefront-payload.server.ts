@@ -43,13 +43,18 @@ export interface StorefrontVideo {
   title: string;
   /**
    * Which player to use. `bunny` videos are files we host and play in a plain
-   * <video>; `youtube` videos are embedded in YouTube's iframe player, because
-   * their terms do not permit re-hosting the file.
+   * <video>; `youtube` and `tiktok` videos are embedded in that platform's own
+   * iframe player, because neither permits re-hosting the file — YouTube by
+   * their terms, TikTok by returning no file from any API at all.
+   *
+   * An embed is the weaker tier: it cannot force autoplay, and it renders
+   * nothing in a country where that platform is blocked. A merchant who
+   * supplies their own file is upgraded to `bunny` automatically.
    *
    * Older cached payloads predate this field, so the player must treat a
    * missing value as `bunny`.
    */
-  provider: "bunny" | "youtube";
+  provider: "bunny" | "youtube" | "tiktok";
   /** Provider-side id — the YouTube video id. Null for hosted videos. */
   embedId: string | null;
   poster: string | null;
@@ -106,9 +111,15 @@ export interface StorefrontProduct {
 function providerFor(video: {
   bunnyVideoId: string | null;
   source: string;
-}): "bunny" | "youtube" {
+}): "bunny" | "youtube" | "tiktok" {
+  // A file we hold always wins. A TikTok post the merchant uploaded the
+  // original for is, to the player, an ordinary hosted video — and a better
+  // one than the embed, because it autoplays and does not depend on TikTok
+  // being reachable from the shopper's country.
   if (video.bunnyVideoId) return "bunny";
-  return video.source === "YOUTUBE" ? "youtube" : "bunny";
+  if (video.source === "YOUTUBE") return "youtube";
+  if (video.source === "TIKTOK") return "tiktok";
+  return "bunny";
 }
 
 /**
@@ -182,10 +193,12 @@ export async function buildStorefrontPayload(
             id: entry.video.id,
             title: entry.video.title ?? "",
             provider: providerFor(entry.video),
+            // Only an embed needs a provider-side id; a hosted video is played
+            // from mp4/hls and has none.
             embedId:
-              providerFor(entry.video) === "youtube"
-                ? entry.video.sourceRef
-                : null,
+              providerFor(entry.video) === "bunny"
+                ? null
+                : entry.video.sourceRef,
             poster: entry.video.posterUrl,
             mp4: entry.video.mp4Url,
             hls: entry.video.hlsUrl,

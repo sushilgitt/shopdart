@@ -593,11 +593,174 @@
     return tile;
   }
 
+  // -------------------------------------------------------------- tiktok ---
+
+  /**
+   * A tile backed by TikTok's embedded player.
+   *
+   * Shares the tile contract with the hosted path — _load, _play, _pause,
+   * _impression — so observe(), the layouts and the product card need no
+   * knowledge of which provider they are dealing with.
+   *
+   * Two differences from the YouTube tile are worth knowing:
+   *
+   *  - No API script is loaded. TikTok's player is driven entirely by
+   *    postMessage, so the cost of supporting it is this function and nothing
+   *    on the network.
+   *  - Playback position arrives by push, through onCurrentTime, so the
+   *    product window needs no polling interval at all.
+   */
+  function buildTikTokTile(video, config, shop, widget) {
+    var tile = el("div", "shopdart__tile shopdart__tile--embed", {
+      "aria-label": video.title || "Shoppable video",
+    });
+
+    if (video.poster) {
+      tile.appendChild(
+        el("img", "shopdart__media shopdart__poster", {
+          src: video.poster,
+          alt: "",
+          loading: "lazy",
+          decoding: "async",
+        })
+      );
+    }
+
+    var frame = null;
+    var ready = false;
+    var wantsPlay = false;
+    var failed = false;
+
+    var products = buildProducts(video, config, shop, widget);
+    if (products) tile.appendChild(products);
+
+    /**
+     * Falls back to the poster and the product card.
+     *
+     * Reached when TikTok reports an error, or when the player never signals
+     * ready — which is what a shopper in a country that blocks TikTok
+     * experiences, and that is a large share of some merchants' traffic. The
+     * products come from our own payload, so the tile stays shoppable even
+     * though the video cannot play.
+     */
+    function degrade() {
+      if (failed) return;
+      failed = true;
+      if (frame) frame.remove();
+      frame = null;
+      if (video.embedId) {
+        var link = el("a", "shopdart__cta shopdart__embed-fallback", {
+          href: "https://www.tiktok.com/@_/video/" + video.embedId,
+          target: "_blank",
+          rel: "noopener",
+        });
+        link.textContent = "Watch on TikTok";
+        link.addEventListener("click", function (event) {
+          event.stopPropagation();
+        });
+        tile.appendChild(link);
+      }
+    }
+
+    function post(type) {
+      if (!frame || !frame.contentWindow) return;
+      frame.contentWindow.postMessage(
+        { "x-tiktok-player": true, type: type, value: undefined },
+        "*"
+      );
+    }
+
+    function onMessage(event) {
+      var data = event.data;
+      if (!data || data["x-tiktok-player"] !== true) return;
+      // Several tiles can be on one page, so only listen to our own frame.
+      if (!frame || event.source !== frame.contentWindow) return;
+
+      if (data.type === "onPlayerReady") {
+        ready = true;
+        post("mute");
+        if (wantsPlay) post("play");
+        return;
+      }
+
+      if (data.type === "onCurrentTime") {
+        if (products && products._sync && data.value) {
+          products._sync(data.value.currentTime || 0);
+        }
+        return;
+      }
+
+      if (data.type === "onStateChange") {
+        // 1 = playing, 0 = ended. Documented alongside -1 init, 2 paused,
+        // 3 buffering, none of which we act on.
+        if (data.value === 1) {
+          if (!tile.dataset.viewed) {
+            tile.dataset.viewed = "1";
+            track(shop, "VIEW_START", widget.id, video.id);
+          }
+        } else if (data.value === 0) {
+          track(shop, "VIEW_COMPLETE", widget.id, video.id);
+        }
+        return;
+      }
+
+      if (data.type === "onPlayerError") {
+        // 3002 is only autoplay being refused by the browser; the video is
+        // fine and the shopper can still press play.
+        var code = data.value && data.value.errorCode;
+        if (code !== 3002) degrade();
+      }
+    }
+
+    tile._load = function () {
+      if (frame || failed || !video.embedId) return;
+
+      frame = el("iframe", "shopdart__media shopdart__embed", {
+        src:
+          "https://www.tiktok.com/player/v1/" +
+          encodeURIComponent(video.embedId) +
+          "?autoplay=0&muted=1&controls=1&progress_bar=1&loop=" +
+          (config.loop !== false ? "1" : "0") +
+          "&music_info=0&description=0&rel=0&native_context_menu=0",
+        allow: "autoplay; encrypted-media; fullscreen",
+        title: video.title || "Shoppable video",
+        loading: "lazy",
+        frameborder: "0",
+      });
+      tile.appendChild(frame);
+      addEventListener("message", onMessage);
+
+      // No onPlayerReady means the frame never loaded — the blocked-country
+      // case, which reports no error of its own.
+      setTimeout(function () {
+        if (!ready) degrade();
+      }, 8000);
+    };
+
+    tile._play = function () {
+      wantsPlay = true;
+      tile._load();
+      if (ready) post("play");
+      tile.dataset.playing = "true";
+    };
+
+    tile._pause = function () {
+      wantsPlay = false;
+      if (ready) post("pause");
+      tile.dataset.playing = "false";
+    };
+
+    return tile;
+  }
+
   function buildTile(video, config, shop, widget) {
     // Payloads cached from before embeds existed carry no provider, and those
     // are always hosted files.
     if (video.provider === "youtube" && video.embedId) {
       return buildYouTubeTile(video, config, shop, widget);
+    }
+    if (video.provider === "tiktok" && video.embedId) {
+      return buildTikTokTile(video, config, shop, widget);
     }
     return buildHostedTile(video, config, shop, widget);
   }

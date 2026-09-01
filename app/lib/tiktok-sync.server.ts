@@ -1,6 +1,7 @@
 import { VideoSource, VideoStatus, type Shop } from "@prisma/client";
 import prisma from "../db.server";
 import { deriveCode } from "./crypto.server";
+import { PlanLimitError, assertCanAddVideo } from "./video.server";
 import {
   fetchOEmbed,
   handleFromAuthorUrl,
@@ -310,6 +311,17 @@ export async function stagePosts(
 
     const { post, caption } = owned;
 
+    // A staged post is playable, so it takes a plan slot like any other video.
+    try {
+      await assertCanAddVideo(shop);
+    } catch (error) {
+      if (error instanceof PlanLimitError) {
+        result.errors.push(`Stopped at your plan limit of ${error.limit} videos.`);
+        break;
+      }
+      throw error;
+    }
+
     const existing = await prisma.video.findFirst({
       where: {
         shopId: shop.id,
@@ -331,7 +343,9 @@ export async function stagePosts(
       // Bunny overwrites this with a real poster in promoteToReady. These URLs
       // expire, which is survivable precisely because they are temporary.
       posterUrl: owned.thumbnailUrl,
-      status: VideoStatus.PENDING,
+      // Playable immediately through TikTok's embed, so there is no waiting
+      // state to sit in.
+      status: VideoStatus.READY,
       bunnyVideoId: null,
       mp4Url: null,
       hlsUrl: null,
@@ -367,11 +381,12 @@ export async function stagePosts(
 }
 
 /**
- * Removes a staged post.
+ * Removes a post that never had a file of its own.
  *
- * Deletes outright rather than archiving, because a row with no file and no
- * events has no history worth preserving. Scoped to PENDING so this can never
- * remove a real video — that is what archiveVideo is for.
+ * Deletes outright rather than archiving: with no Bunny asset there is nothing
+ * to release, and a row whose only content was an embed has no history worth
+ * preserving. Scoped to rows without a Bunny asset so this can never destroy a
+ * video the merchant uploaded — that is what archiveVideo is for.
  */
 export async function unstagePost(
   shopId: string,
@@ -382,7 +397,6 @@ export async function unstagePost(
       id: videoId,
       shopId,
       source: VideoSource.TIKTOK,
-      status: VideoStatus.PENDING,
       bunnyVideoId: null,
     },
   });

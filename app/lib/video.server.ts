@@ -113,11 +113,12 @@ export async function beginUpload(
     existing = await prisma.video.findFirst({
       where: { shopId: shop.id, source, sourceRef },
     });
-    // A staged post is waiting for exactly this file, so it is attached rather
-    // than refused. Anything else that is still live really is a duplicate.
-    const staged =
-      existing?.status === VideoStatus.PENDING && !existing.bunnyVideoId;
-    if (existing && !existing.archivedAt && !staged) {
+    // A live row with no Bunny asset is an embed — a TikTok post playing
+    // through TikTok's own player. Supplying the original file upgrades it to
+    // hosted playback in place, so the file is attached rather than refused.
+    // Anything that already has an asset really is a duplicate.
+    const upgradeable = Boolean(existing && !existing.bunnyVideoId);
+    if (existing && !existing.archivedAt && !upgradeable) {
       throw new DuplicateSourceError(existing.id);
     }
   }
@@ -125,8 +126,8 @@ export async function beginUpload(
   // Only skip the cap when this row already occupies a slot. An archived row
   // does not — countActiveVideos excludes it — so reviving one grows the
   // library and must be checked, or a merchant could pass their limit by
-  // archiving and re-importing. A staged PENDING row is excluded for the same
-  // reason and is taking its slot now.
+  // archiving and re-importing. Upgrading a live embed to a hosted file, by
+  // contrast, changes nothing about the count.
   const alreadyCounted =
     existing !== null &&
     !existing.archivedAt &&

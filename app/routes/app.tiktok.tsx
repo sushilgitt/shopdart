@@ -68,21 +68,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       shop.ttUsername && !shop.ttVerifiedAt
         ? verificationCodeFor(shop.id, shop.ttUsername)
         : null,
-    videos: videos
-      .map((video) => ({
-        id: video.id,
-        title: video.title ?? "Untitled",
-        status: video.status as string,
-        // A staged post: link verified and metadata cached, no file yet.
-        needsFile: video.status === "PENDING",
-        posterUrl: video.posterUrl,
-        sourceUrl: video.sourceUrl,
-        errorMessage: video.errorMessage,
-        tagCount: video._count.tags,
-      }))
-      // Posts waiting on a file are the only rows the merchant can act on, so
-      // they lead regardless of when they were added.
-      .sort((a, b) => Number(b.needsFile) - Number(a.needsFile)),
+    videos: videos.map((video) => ({
+      id: video.id,
+      title: video.title ?? "Untitled",
+      status: video.status as string,
+      // Whether we hold the file. Embeds play through TikTok's player and can
+      // be upgraded by supplying the original; hosted videos are already the
+      // better tier and have a Bunny asset to release when removed.
+      hosted: Boolean(video.bunnyVideoId),
+      posterUrl: video.posterUrl,
+      sourceUrl: video.sourceUrl,
+      errorMessage: video.errorMessage,
+      tagCount: video._count.tags,
+    })),
     used: await countActiveVideos(shop.id),
     limit: planFor(shop.plan).videos,
     bunnyReady: isBunnyConfigured(),
@@ -300,9 +298,9 @@ export default function TikTok() {
           <s-paragraph>
             <s-text color="subdued">
               Paste the links to your TikTok posts — one per line, up to 25 at a
-              time. Shopdart checks each one belongs to @{username} and adds it
-              below with its caption and cover. You then drop in the video file
-              for each, because TikTok doesn&rsquo;t let apps download videos.
+              time. Shopdart checks each one belongs to @{username}, then adds
+              it below ready to tag and publish. Videos play through
+              TikTok&rsquo;s own player, so nothing needs uploading.
             </s-text>
           </s-paragraph>
           <Form method="post">
@@ -369,9 +367,8 @@ export default function TikTok() {
                       <s-text type="strong">{video.title}</s-text>
                       <s-text color="subdued">
                         {statusLabel(video.status)}
-                        {video.needsFile
-                          ? ""
-                          : ` · ${video.tagCount} product${video.tagCount === 1 ? "" : "s"} tagged`}
+                        {video.hosted ? "" : " · plays from TikTok"}
+                        {` · ${video.tagCount} product${video.tagCount === 1 ? "" : "s"} tagged`}
                       </s-text>
                       {video.errorMessage && (
                         <s-text color="subdued">{video.errorMessage}</s-text>
@@ -384,77 +381,62 @@ export default function TikTok() {
                     </s-stack>
                   </s-stack>
                   <s-stack direction="inline" gap="small-200" alignItems="center">
-                    {video.needsFile ? (
-                      <>
-                        {uploading?.id === video.id ? (
-                          <s-text color="subdued">
-                            {uploading.percent}% uploaded
-                          </s-text>
-                        ) : (
-                          <s-drop-zone
-                            label="Video file"
-                            labelAccessibilityVisibility="exclusive"
-                            accessibilityLabel={`Drop the video file for ${video.title}`}
-                            accept="video/*"
-                            onChange={(event) => {
-                              // Snapshot before resetting: clearing `value` is
-                              // what lets a merchant re-pick the same file
-                              // after a failed attempt, and the file list is
-                              // emptied by that reset.
-                              const zone = event.currentTarget;
-                              const picked = Array.from(zone.files ?? []);
-                              zone.value = "";
-                              if (picked.length > 0 && video.sourceUrl) {
-                                void attachFile(
-                                  video.id,
-                                  video.sourceUrl,
-                                  picked,
-                                );
-                              }
-                            }}
-                            onDropRejected={() =>
-                              setNotice(
-                                "That file isn't a video Shopdart can upload.",
-                              )
+                    <s-button
+                      href={`/app/videos/${video.id}`}
+                      variant="secondary"
+                    >
+                      {video.tagCount > 0 ? "Edit tags" : "Tag products"}
+                    </s-button>
+
+                    {/*
+                      Supplying the original file is an upgrade, not a
+                      requirement. It swaps TikTok's player for ours, which
+                      autoplays and keeps working where TikTok is blocked, so
+                      the control stays available on every embed row.
+                    */}
+                    {!video.hosted &&
+                      (uploading?.id === video.id ? (
+                        <s-text color="subdued">
+                          {uploading.percent}% uploaded
+                        </s-text>
+                      ) : (
+                        <s-drop-zone
+                          label="Use your own file"
+                          labelAccessibilityVisibility="exclusive"
+                          accessibilityLabel={`Upload your own file for ${video.title} to replace the TikTok player`}
+                          accept="video/*"
+                          onChange={(event) => {
+                            // Snapshot before resetting: clearing `value` is
+                            // what lets a merchant re-pick the same file after
+                            // a failed attempt, and the file list is emptied
+                            // by that reset.
+                            const zone = event.currentTarget;
+                            const picked = Array.from(zone.files ?? []);
+                            zone.value = "";
+                            if (picked.length > 0 && video.sourceUrl) {
+                              void attachFile(video.id, video.sourceUrl, picked);
                             }
-                            {...(blocked
-                              ? { disabled: true, error: blocked }
-                              : {})}
-                          />
-                        )}
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="unstage" />
-                          <input
-                            type="hidden"
-                            name="videoId"
-                            value={video.id}
-                          />
-                          <s-button type="submit" variant="tertiary">
-                            Remove
-                          </s-button>
-                        </Form>
-                      </>
-                    ) : (
-                      <>
-                        <s-button
-                          href={`/app/videos/${video.id}`}
-                          variant="secondary"
-                        >
-                          {video.tagCount > 0 ? "Edit tags" : "Tag products"}
-                        </s-button>
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="archive" />
-                          <input
-                            type="hidden"
-                            name="videoId"
-                            value={video.id}
-                          />
-                          <s-button type="submit" variant="tertiary">
-                            Remove
-                          </s-button>
-                        </Form>
-                      </>
-                    )}
+                          }}
+                          onDropRejected={() =>
+                            setNotice(
+                              "That file isn't a video Shopdart can upload.",
+                            )
+                          }
+                          {...(blocked ? { disabled: true, error: blocked } : {})}
+                        />
+                      ))}
+
+                    <Form method="post">
+                      <input
+                        type="hidden"
+                        name="intent"
+                        value={video.hosted ? "archive" : "unstage"}
+                      />
+                      <input type="hidden" name="videoId" value={video.id} />
+                      <s-button type="submit" variant="tertiary">
+                        Remove
+                      </s-button>
+                    </Form>
                   </s-stack>
                 </s-stack>
               </s-box>
@@ -483,17 +465,19 @@ export default function TikTok() {
         </s-section>
       )}
 
-      <s-section slot="aside" heading="Finding your video file">
+      <s-section slot="aside" heading="Use your own file (optional)">
         <s-paragraph>
           <s-text color="subdued">
-            The best copy is the original you edited before posting — no
-            watermark, full quality.
+            Your videos play through TikTok&rsquo;s player by default, which
+            needs no upload. Uploading the original file instead is worth it
+            for two reasons: it autoplays as shoppers scroll, and it keeps
+            playing for visitors in countries where TikTok is blocked.
           </s-text>
         </s-paragraph>
         <s-paragraph>
           <s-text color="subdued">
-            If you no longer have it, open the post in the TikTok app, tap
-            Share, then Save to device. That copy carries a TikTok watermark.
+            The best copy is the original you edited before posting — no
+            watermark, full quality. Drop it on any video below to switch.
           </s-text>
         </s-paragraph>
       </s-section>
@@ -511,7 +495,7 @@ export default function TikTok() {
 function statusLabel(status: string): string {
   switch (status) {
     case "PENDING":
-      return "Needs video file";
+      return "Waiting";
     case "UPLOADING":
       return "Uploading";
     case "PROCESSING":
