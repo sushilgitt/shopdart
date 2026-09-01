@@ -14,7 +14,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const [videoCount, readyCount, widgetCount, publishedCount, usage] =
     await Promise.all([
-      prisma.video.count({ where: { shopId: shop.id, archivedAt: null } }),
+      prisma.video.count({
+        // Matches countActiveVideos: staged posts hold no plan slot and are
+        // not part of the library until a file arrives.
+        where: { shopId: shop.id, archivedAt: null, status: { not: "PENDING" } },
+      }),
       prisma.video.count({
         where: { shopId: shop.id, archivedAt: null, status: "READY" },
       }),

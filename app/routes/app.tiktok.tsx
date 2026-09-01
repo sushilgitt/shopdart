@@ -24,6 +24,8 @@ import {
   TikTokUnreachableError,
   beginAccountClaim,
   disconnectTikTok,
+  stagePosts,
+  unstagePost,
   verifyAccountByCaption,
   verificationCodeFor,
 } from "../lib/tiktok-sync.server";
@@ -66,15 +68,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       shop.ttUsername && !shop.ttVerifiedAt
         ? verificationCodeFor(shop.id, shop.ttUsername)
         : null,
-    videos: videos.map((video) => ({
-      id: video.id,
-      title: video.title ?? "Untitled",
-      status: video.status as string,
-      posterUrl: video.posterUrl,
-      sourceUrl: video.sourceUrl,
-      errorMessage: video.errorMessage,
-      tagCount: video._count.tags,
-    })),
+    videos: videos
+      .map((video) => ({
+        id: video.id,
+        title: video.title ?? "Untitled",
+        status: video.status as string,
+        // A staged post: link verified and metadata cached, no file yet.
+        needsFile: video.status === "PENDING",
+        posterUrl: video.posterUrl,
+        sourceUrl: video.sourceUrl,
+        errorMessage: video.errorMessage,
+        tagCount: video._count.tags,
+      }))
+      // Posts waiting on a file are the only rows the merchant can act on, so
+      // they lead regardless of when they were added.
+      .sort((a, b) => Number(b.needsFile) - Number(a.needsFile)),
     used: await countActiveVideos(shop.id),
     limit: planFor(shop.plan).videos,
     bunnyReady: isBunnyConfigured(),
@@ -118,6 +126,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { ok: true as const, message: "TikTok account disconnected." };
   }
 
+  if (intent === "stage") {
+    const result = await stagePosts(shop, String(form.get("links") ?? ""));
+    if (result.added === 0) {
+      return {
+        ok: false as const,
+        error: result.errors[0] ?? "No posts were added.",
+      };
+    }
+    const parts = [`Added ${result.added} post${result.added === 1 ? "" : "s"}`];
+    if (result.skipped) parts.push(`${result.skipped} already in your library`);
+    if (result.failed) parts.push(`${result.failed} couldn't be added`);
+    return { ok: true as const, message: `${parts.join(" · ")}.` };
+  }
+
+  if (intent === "unstage") {
+    await unstagePost(shop.id, String(form.get("videoId")));
+    return { ok: true as const, message: "Post removed." };
+  }
+
   if (intent === "archive") {
     await archiveVideo(shop.id, String(form.get("videoId")));
     return { ok: true as const, message: "Video removed." };
@@ -148,49 +175,55 @@ export default function TikTok() {
     }
   }, [actionData, shopify]);
 
-  const [link, setLink] = useState("");
-  const [progress, setProgress] = useState<number | null>(null);
+  // Which staged row is currently receiving a file, and how far along it is.
+  // Per row rather than per page, because the drop zones sit inside the rows.
+  const [uploading, setUploading] = useState<{
+    id: string;
+    percent: number;
+  } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const atLimit = used >= limit;
 
-  // The link is required, not optional. It is the only thing that ties an
-  // uploaded file to a post we can check the ownership of — without it there
-  // is nothing to verify against, and this page would be an ordinary upload
-  // form wearing a TikTok heading.
+  // Why a file cannot be accepted right now, shown on the drop zone itself so
+  // the reason sits beside the control the merchant just found unresponsive.
   const blocked = !bunnyReady
     ? "Video hosting isn't connected yet."
-    : !verified
-      ? "Verify your TikTok account before adding videos."
-      : atLimit
-        ? `You've used all ${limit.toLocaleString()} videos on your plan.`
-        : !link.trim()
-          ? "Paste the link to your TikTok post first."
-          : null;
+    : atLimit
+      ? `You've used all ${limit.toLocaleString()} videos on your plan.`
+      : null;
 
-  const handleFiles = useCallback(
-    async (files: File[]) => {
+  /**
+   * Attaches a file to one staged post.
+   *
+   * The post's own link travels with the upload, so the server re-checks
+   * ownership against TikTok before it accepts the file — the same gate the
+   * post passed when it was staged. It is repeated deliberately: this endpoint
+   * is reachable directly, and a check that only ran at staging time would be
+   * one a caller could skip.
+   */
+  const attachFile = useCallback(
+    async (videoId: string, sourceUrl: string, files: File[]) => {
       setNotice(null);
       const file = files[0];
       if (!file) return;
 
-      setProgress(0);
+      setUploading({ id: videoId, percent: 0 });
       const result = await startUpload(
-        { file, sourceUrl: link.trim() },
-        { onProgress: setProgress },
+        { file, sourceUrl },
+        {
+          onProgress: (percent) => setUploading({ id: videoId, percent }),
+        },
       );
-      setProgress(null);
+      setUploading(null);
 
       if (!result.ok) {
         setNotice(result.error);
         return;
       }
-
-      // The link described the video that just went up, not the next one.
-      setLink("");
       revalidator.revalidate();
     },
-    [link, revalidator],
+    [revalidator],
   );
 
   return (
@@ -263,48 +296,27 @@ export default function TikTok() {
       )}
 
       {verified && (
-        <s-section heading="Add a video from your TikTok">
+        <s-section heading="Add your TikTok posts">
           <s-paragraph>
             <s-text color="subdued">
-              TikTok doesn&rsquo;t let apps download videos, so Shopdart uses
-              the file you already have. Paste the link to your post, then drop
-              in the video file. Shopdart checks with TikTok that the post is
-              yours before accepting it.
+              Paste the links to your TikTok posts — one per line, up to 25 at a
+              time. Shopdart checks each one belongs to @{username} and adds it
+              below with its caption and cover. You then drop in the video file
+              for each, because TikTok doesn&rsquo;t let apps download videos.
             </s-text>
           </s-paragraph>
-
-          <s-text-field
-            label="TikTok post link"
-            placeholder="https://www.tiktok.com/@yourname/video/1234567890"
-            value={link}
-            onChange={(event) => setLink(event.currentTarget.value)}
-          />
-
-          <s-drop-zone
-            label="Video file"
-            labelAccessibilityVisibility="exclusive"
-            accessibilityLabel="Drop your TikTok video file here, or click to choose it"
-            accept="video/*"
-            onChange={(event) => {
-              // Snapshot before resetting: clearing `value` is what lets a
-              // merchant re-pick the same file after a failed attempt, and the
-              // file list is emptied by that reset.
-              const zone = event.currentTarget;
-              const picked = Array.from(zone.files ?? []);
-              zone.value = "";
-              if (picked.length > 0) void handleFiles(picked);
-            }}
-            onDropRejected={() =>
-              setNotice("That file isn't a video Shopdart can upload.")
-            }
-            {...(blocked ? { disabled: true, error: blocked } : {})}
-          />
-
-          {progress !== null && (
-            <s-paragraph>
-              <s-text color="subdued">{progress}% uploaded</s-text>
-            </s-paragraph>
-          )}
+          <Form method="post">
+            <input type="hidden" name="intent" value="stage" />
+            <s-stack direction="block" gap="base">
+              <s-text-area
+                name="links"
+                label="TikTok post links"
+                placeholder={`https://www.tiktok.com/@${username}/video/1234567890`}
+                rows={4}
+              />
+              <s-button type="submit">Add posts</s-button>
+            </s-stack>
+          </Form>
         </s-section>
       )}
 
@@ -357,7 +369,9 @@ export default function TikTok() {
                       <s-text type="strong">{video.title}</s-text>
                       <s-text color="subdued">
                         {statusLabel(video.status)}
-                        {` · ${video.tagCount} product${video.tagCount === 1 ? "" : "s"} tagged`}
+                        {video.needsFile
+                          ? ""
+                          : ` · ${video.tagCount} product${video.tagCount === 1 ? "" : "s"} tagged`}
                       </s-text>
                       {video.errorMessage && (
                         <s-text color="subdued">{video.errorMessage}</s-text>
@@ -370,16 +384,77 @@ export default function TikTok() {
                     </s-stack>
                   </s-stack>
                   <s-stack direction="inline" gap="small-200" alignItems="center">
-                    <s-button href={`/app/videos/${video.id}`} variant="secondary">
-                      {video.tagCount > 0 ? "Edit tags" : "Tag products"}
-                    </s-button>
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="archive" />
-                      <input type="hidden" name="videoId" value={video.id} />
-                      <s-button type="submit" variant="tertiary">
-                        Remove
-                      </s-button>
-                    </Form>
+                    {video.needsFile ? (
+                      <>
+                        {uploading?.id === video.id ? (
+                          <s-text color="subdued">
+                            {uploading.percent}% uploaded
+                          </s-text>
+                        ) : (
+                          <s-drop-zone
+                            label="Video file"
+                            labelAccessibilityVisibility="exclusive"
+                            accessibilityLabel={`Drop the video file for ${video.title}`}
+                            accept="video/*"
+                            onChange={(event) => {
+                              // Snapshot before resetting: clearing `value` is
+                              // what lets a merchant re-pick the same file
+                              // after a failed attempt, and the file list is
+                              // emptied by that reset.
+                              const zone = event.currentTarget;
+                              const picked = Array.from(zone.files ?? []);
+                              zone.value = "";
+                              if (picked.length > 0 && video.sourceUrl) {
+                                void attachFile(
+                                  video.id,
+                                  video.sourceUrl,
+                                  picked,
+                                );
+                              }
+                            }}
+                            onDropRejected={() =>
+                              setNotice(
+                                "That file isn't a video Shopdart can upload.",
+                              )
+                            }
+                            {...(blocked
+                              ? { disabled: true, error: blocked }
+                              : {})}
+                          />
+                        )}
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="unstage" />
+                          <input
+                            type="hidden"
+                            name="videoId"
+                            value={video.id}
+                          />
+                          <s-button type="submit" variant="tertiary">
+                            Remove
+                          </s-button>
+                        </Form>
+                      </>
+                    ) : (
+                      <>
+                        <s-button
+                          href={`/app/videos/${video.id}`}
+                          variant="secondary"
+                        >
+                          {video.tagCount > 0 ? "Edit tags" : "Tag products"}
+                        </s-button>
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="archive" />
+                          <input
+                            type="hidden"
+                            name="videoId"
+                            value={video.id}
+                          />
+                          <s-button type="submit" variant="tertiary">
+                            Remove
+                          </s-button>
+                        </Form>
+                      </>
+                    )}
                   </s-stack>
                 </s-stack>
               </s-box>
@@ -435,6 +510,8 @@ export default function TikTok() {
 
 function statusLabel(status: string): string {
   switch (status) {
+    case "PENDING":
+      return "Needs video file";
     case "UPLOADING":
       return "Uploading";
     case "PROCESSING":

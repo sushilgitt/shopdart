@@ -1,4 +1,4 @@
-import type { Shop } from "@prisma/client";
+import { VideoSource, VideoStatus, type Shop } from "@prisma/client";
 import prisma from "../db.server";
 import { deriveCode } from "./crypto.server";
 import {
@@ -7,6 +7,7 @@ import {
   parseHandle,
   resolvePost,
   sameHandle,
+  titleFromCaption,
   type TikTokPost,
 } from "./tiktok.server";
 
@@ -190,10 +191,18 @@ export async function disconnectTikTok(shopId: string): Promise<void> {
  * Called from the upload endpoint rather than from the page, so the check
  * cannot be skipped by posting to the API directly.
  */
+export interface OwnedPost {
+  post: TikTokPost;
+  /** The post's caption, as TikTok reports it. */
+  caption: string | null;
+  /** TikTok's cover image. Short-lived; only useful before the file encodes. */
+  thumbnailUrl: string | null;
+}
+
 export async function assertOwnedPost(
   shop: Shop,
   postUrl: string,
-): Promise<TikTokPost> {
+): Promise<OwnedPost> {
   if (!shop.ttUsername) throw new TikTokNotConnectedError();
   if (!shop.ttVerifiedAt) throw new TikTokNotVerifiedError();
 
@@ -220,18 +229,161 @@ export async function assertOwnedPost(
     throw new TikTokOwnershipError(shop.ttUsername, author);
   }
 
-  return post;
-}
-
-/** Caption of an owned post, for prefilling the library title. */
-export async function captionFor(postUrl: string): Promise<string | null> {
-  const meta = await fetchOEmbed(postUrl);
-  return meta?.title ?? null;
+  // Handed back rather than re-fetched by the caller. Confirming ownership
+  // already cost one call to TikTok, and it returned everything a staged row
+  // needs; asking again would double every batch for nothing.
+  return { post, caption: meta.title, thumbnailUrl: meta.thumbnailUrl };
 }
 
 export async function markSynced(shopId: string): Promise<void> {
   await prisma.shop.update({
     where: { id: shopId },
     data: { ttLastSyncedAt: new Date() },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Staging
+// ---------------------------------------------------------------------------
+
+/**
+ * Adding a post to the library before its file exists.
+ *
+ * TikTok has no way to enumerate an account's posts — the Display API needs a
+ * developer app and the `video.list` scope, and oEmbed answers about one post
+ * at a time. So the gallery is built from links the merchant supplies rather
+ * than fetched, and each entry is checked against `assertOwnedPost` on the way
+ * in exactly as a direct upload would be.
+ *
+ * A staged post is a Video row in PENDING with no Bunny asset — which is what
+ * that status has always meant ("row created, nothing sent to Bunny yet") and
+ * what nothing had used it for until now. It carries the caption and cover
+ * from oEmbed so the row is recognisable, occupies no plan slot, and is
+ * excluded from the storefront payload because that only publishes READY.
+ * Dropping a file onto it later hands it to `beginUpload`, which attaches the
+ * Bunny asset to this row rather than creating a second one.
+ */
+export interface StageResult {
+  added: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
+}
+
+const MAX_STAGED_PER_REQUEST = 25;
+
+export async function stagePosts(
+  shop: Shop,
+  rawInput: string,
+): Promise<StageResult> {
+  const result: StageResult = { added: 0, skipped: 0, failed: 0, errors: [] };
+
+  const links = rawInput
+    .split(/[\s,]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, MAX_STAGED_PER_REQUEST);
+
+  if (links.length === 0) {
+    result.errors.push("Paste at least one TikTok post link.");
+    return result;
+  }
+
+  for (const link of links) {
+    let owned: OwnedPost;
+    try {
+      // The same gate a direct upload passes. Staging must not be a way in
+      // that skips it.
+      owned = await assertOwnedPost(shop, link);
+    } catch (error) {
+      if (error instanceof TikTokUnreachableError) {
+        // No point trying the rest of the batch against an unreachable TikTok.
+        result.errors.push(error.message);
+        break;
+      }
+      result.failed += 1;
+      result.errors.push(
+        error instanceof Error ? error.message : "That link could not be added.",
+      );
+      continue;
+    }
+
+    const { post, caption } = owned;
+
+    const existing = await prisma.video.findFirst({
+      where: {
+        shopId: shop.id,
+        source: VideoSource.TIKTOK,
+        sourceRef: post.videoId,
+      },
+      select: { id: true, archivedAt: true },
+    });
+    if (existing && !existing.archivedAt) {
+      result.skipped += 1;
+      continue;
+    }
+
+    const fields = {
+      sourceUrl: post.url,
+      title: titleFromCaption(caption) || "TikTok post",
+      caption,
+      // TikTok's cover, used only until the merchant's own file encodes —
+      // Bunny overwrites this with a real poster in promoteToReady. These URLs
+      // expire, which is survivable precisely because they are temporary.
+      posterUrl: owned.thumbnailUrl,
+      status: VideoStatus.PENDING,
+      bunnyVideoId: null,
+      mp4Url: null,
+      hlsUrl: null,
+      errorMessage: null,
+    };
+
+    try {
+      if (existing) {
+        await prisma.video.update({
+          where: { id: existing.id },
+          data: { ...fields, archivedAt: null },
+        });
+      } else {
+        await prisma.video.create({
+          data: {
+            shopId: shop.id,
+            source: VideoSource.TIKTOK,
+            sourceRef: post.videoId,
+            ...fields,
+          },
+        });
+      }
+      result.added += 1;
+    } catch (error) {
+      console.error(`Could not stage TikTok post ${post.videoId}`, error);
+      result.failed += 1;
+      result.errors.push("One post could not be saved.");
+    }
+  }
+
+  if (result.added > 0) await markSynced(shop.id);
+  return result;
+}
+
+/**
+ * Removes a staged post.
+ *
+ * Deletes outright rather than archiving, because a row with no file and no
+ * events has no history worth preserving. Scoped to PENDING so this can never
+ * remove a real video — that is what archiveVideo is for.
+ */
+export async function unstagePost(
+  shopId: string,
+  videoId: string,
+): Promise<void> {
+  await prisma.video.deleteMany({
+    where: {
+      id: videoId,
+      shopId,
+      source: VideoSource.TIKTOK,
+      status: VideoStatus.PENDING,
+      bunnyVideoId: null,
+    },
   });
 }

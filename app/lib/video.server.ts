@@ -25,10 +25,18 @@ export class PlanLimitError extends Error {
   }
 }
 
-/** Videos counting against the plan cap. Archived videos are excluded. */
+/**
+ * Videos counting against the plan cap.
+ *
+ * Archived rows are excluded, and so are PENDING ones. PENDING means a post
+ * the merchant has staged — its link is verified and its metadata is cached,
+ * but no file has arrived yet. Charging a plan slot for something that cannot
+ * play would let a merchant fill their library with placeholders, so the slot
+ * is taken when the file is, in `beginUpload`.
+ */
 export async function countActiveVideos(shopId: string): Promise<number> {
   return prisma.video.count({
-    where: { shopId, archivedAt: null },
+    where: { shopId, archivedAt: null, status: { not: VideoStatus.PENDING } },
   });
 }
 
@@ -105,14 +113,25 @@ export async function beginUpload(
     existing = await prisma.video.findFirst({
       where: { shopId: shop.id, source, sourceRef },
     });
-    if (existing && !existing.archivedAt) {
+    // A staged post is waiting for exactly this file, so it is attached rather
+    // than refused. Anything else that is still live really is a duplicate.
+    const staged =
+      existing?.status === VideoStatus.PENDING && !existing.bunnyVideoId;
+    if (existing && !existing.archivedAt && !staged) {
       throw new DuplicateSourceError(existing.id);
     }
   }
 
-  // Reviving an archived row returns the library to a size it already held, so
-  // it does not need room under the cap.
-  if (!existing) await assertCanAddVideo(shop);
+  // Only skip the cap when this row already occupies a slot. An archived row
+  // does not — countActiveVideos excludes it — so reviving one grows the
+  // library and must be checked, or a merchant could pass their limit by
+  // archiving and re-importing. A staged PENDING row is excluded for the same
+  // reason and is taking its slot now.
+  const alreadyCounted =
+    existing !== null &&
+    !existing.archivedAt &&
+    existing.status !== VideoStatus.PENDING;
+  if (!alreadyCounted) await assertCanAddVideo(shop);
 
   const displayTitle = origin.title?.trim() || stripExtension(fileName);
   const bunny = await createBunnyVideo(displayTitle);

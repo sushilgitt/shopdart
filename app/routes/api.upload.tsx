@@ -15,7 +15,6 @@ import {
   TikTokOwnershipError,
   TikTokUnreachableError,
   assertOwnedPost,
-  captionFor,
   markSynced,
 } from "../lib/tiktok-sync.server";
 
@@ -54,9 +53,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Everything below runs before a Bunny asset is allocated, so a rejected
   // link costs nothing and leaves nothing behind.
   if (sourceUrl) {
-    let post;
+    let owned;
     try {
-      post = await assertOwnedPost(shop, sourceUrl);
+      owned = await assertOwnedPost(shop, sourceUrl);
     } catch (error) {
       if (error instanceof TikTokNotConnectedError) {
         return Response.json({
@@ -90,7 +89,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
     }
 
-    const caption = await captionFor(post.url);
+    const { post, caption } = owned;
 
     origin = {
       source: VideoSource.TIKTOK,

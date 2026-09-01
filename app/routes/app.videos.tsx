@@ -25,7 +25,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   await repairEmptyVariantTags(admin, shop.id);
 
   const videos = await prisma.video.findMany({
-    where: { shopId: shop.id, archivedAt: null },
+    // PENDING is a TikTok post staged without a file yet. It is managed on the
+    // TikTok page and cannot be tagged or published, so it would only be a row
+    // here that does nothing.
+    where: { shopId: shop.id, archivedAt: null, status: { not: "PENDING" } },
     orderBy: { createdAt: "desc" },
     take: 100,
     include: { _count: { select: { tags: true } } },
