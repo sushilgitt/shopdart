@@ -6,7 +6,7 @@
 import { register } from "@shopify/web-pixels-extension";
 
 /**
- * Shopdart purchase attribution.
+ * DPS purchase attribution.
  *
  * Why a pixel at all, when the player already reports everything else:
  * checkout is not the storefront. The theme extension's script is not loaded
@@ -86,7 +86,7 @@ register(({ analytics, settings, init }) => {
     if (!checkout) return;
 
     const videoId = attribute(checkout.attributes, ATTR_VIDEO);
-    // No Shopdart attribute means this sale had nothing to do with a video.
+    // No DPS attribute means this sale had nothing to do with a video.
     // Staying silent is the correct answer, not a zero-value purchase row.
     if (!videoId) return;
 

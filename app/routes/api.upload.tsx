@@ -61,7 +61,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         return Response.json({
           ok: false,
           error:
-            "Connect your TikTok account first, so Shopdart knows which videos are yours.",
+            "Connect your TikTok account first, so DPS knows which videos are yours.",
         });
       }
       if (error instanceof TikTokNotVerifiedError) {

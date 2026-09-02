@@ -64,7 +64,7 @@ export const loader = async ({ request }: LoaderFunctionArgs): Promise<Result> =
     return {
       ok: false,
       message:
-        "This link is invalid or has expired. Start the connection again from Shopdart.",
+        "This link is invalid or has expired. Start the connection again from DPS.",
     };
   }
 
@@ -214,7 +214,7 @@ export default function YouTubeCallback() {
       </h1>
       <p style={{ margin: "0 0 20px", color: "#5c6b70" }}>
         {result.ok
-          ? `Connected to ${result.channelTitle}. You can close this tab and return to Shopdart to import your videos.`
+          ? `Connected to ${result.channelTitle}. You can close this tab and return to DPS to import your videos.`
           : result.message}
       </p>
       <button

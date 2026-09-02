@@ -18,7 +18,7 @@ import { buildStorefrontPayload } from "../lib/storefront-payload.server";
  *  - `stale-if-error=86400` keeps the outage protection that the long window
  *    was really there for. If our origin is down, storefronts carry on with the
  *    last good payload for a day rather than losing their video section
- *    because Shopdart is having a bad day.
+ *    because DPS is having a bad day.
  *
  * Metafields were the alternative and are wrong here: they are cached in
  * Liquid for hours, so a merchant changing a colour would not see it until the

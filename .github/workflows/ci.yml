@@ -1,6 +1,6 @@
 name: CI
 
-# Verifies Shopdart still typechecks, lints and builds.
+# Verifies DPS still typechecks, lints and builds.
 #
 # Deliberately a single npm job on Node 20, matching `node:20-alpine` in the
 # Dockerfile: CI should exercise the runtime we actually ship, not a matrix of

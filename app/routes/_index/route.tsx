@@ -13,7 +13,7 @@ import { login } from "../../shopify.server";
  * secondary to the description rather than the whole page.
  */
 export const meta = () => [
-  { title: "Shopdart — Shoppable videos for Shopify" },
+  { title: "DPS — Shoppable videos for Shopify" },
   {
     name: "description",
     content:
@@ -75,7 +75,7 @@ export default function Index() {
         Shoppable videos for Shopify
       </h1>
       <p style={{ fontSize: 19, color: "#5c6b70", margin: "0 0 32px" }}>
-        Shopdart turns the videos you already post — Instagram reels, YouTube
+        DPS turns the videos you already post — Instagram reels, YouTube
         videos, or your own uploads — into shoppable videos on your storefront.
         Shoppers tap a product in the player and buy without leaving the page.
       </p>
@@ -119,7 +119,7 @@ export default function Index() {
               cursor: "pointer",
             }}
           >
-            Open Shopdart
+            Open DPS
           </button>
         </Form>
       )}
@@ -139,7 +139,7 @@ export default function Index() {
         What we access, and what we don&rsquo;t
       </h2>
       <p style={{ margin: "0 0 12px", color: "#5c6b70" }}>
-        Shopdart reads your products so you can tag them, and reads media from
+        DPS reads your products so you can tag them, and reads media from
         the Instagram or YouTube accounts you connect. It cannot post, comment
         or change anything on those accounts, and it never reads your customer
         records or payment details. Full detail is in the{" "}

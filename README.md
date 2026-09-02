@@ -1,4 +1,4 @@
-# Shopdart
+# DPS
 
 Shoppable videos for Shopify. Merchants bring in reels from their own Instagram
 account, videos from their own YouTube channel, or upload files directly —

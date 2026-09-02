@@ -80,7 +80,7 @@ export default function Dashboard() {
     {
       done: publishedCount > 0,
       label: "Publish it to your storefront",
-      detail: "Add the Shopdart block to your theme where you want it to show.",
+      detail: "Add the DPS block to your theme where you want it to show.",
       href: "/app/widgets",
       action: "Publish",
     },
@@ -90,7 +90,7 @@ export default function Dashboard() {
   const viewsPct = plan.views > 0 ? Math.min(100, Math.round((usage.views / plan.views) * 100)) : 0;
 
   return (
-    <s-page heading="Shopdart">
+    <s-page heading="DPS">
       <s-button slot="primary-action" href="/app/videos">
         Add videos
       </s-button>

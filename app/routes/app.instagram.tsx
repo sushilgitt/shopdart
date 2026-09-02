@@ -175,7 +175,7 @@ export default function Instagram() {
       {!configured && (
         <s-section heading="Instagram isn't set up yet">
           <s-paragraph>
-            Shopdart needs Meta app credentials before merchants can connect
+            DPS needs Meta app credentials before merchants can connect
             their accounts. Add INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET and
             INSTAGRAM_REDIRECT_URI.
           </s-paragraph>
@@ -185,13 +185,13 @@ export default function Instagram() {
       {configured && !connected && (
         <s-section heading="Connect your Instagram account">
           <s-paragraph>
-            Shopdart imports reels from your own Instagram Business or Creator
+            DPS imports reels from your own Instagram Business or Creator
             account. You&rsquo;ll sign in with Instagram directly — no Facebook Page
             required.
           </s-paragraph>
           <s-paragraph>
             <s-text color="subdued">
-              Shopdart only reads your media. It cannot post, comment or message
+              DPS only reads your media. It cannot post, comment or message
               on your behalf.
             </s-text>
           </s-paragraph>

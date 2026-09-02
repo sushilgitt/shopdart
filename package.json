@@ -1,7 +1,7 @@
 {
   "name": "shopdart",
   "version": "0.1.0",
-  "description": "Shopdart — shoppable videos for Shopify",
+  "description": "DPS — shoppable videos for Shopify",
   "private": true,
   "scripts": {
     "build": "react-router build",

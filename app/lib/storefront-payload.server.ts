@@ -22,7 +22,7 @@ export interface StorefrontPayload {
   /** ISO currency of the store, so the player formats prices correctly. */
   currency: string | null;
   /**
-   * Free plan shows a small "Powered by Shopdart" badge. This is the concrete
+   * Free plan shows a small "Powered by DPS" badge. This is the concrete
    * reason to upgrade to Basic, so it has to actually render.
    */
   watermark: boolean;

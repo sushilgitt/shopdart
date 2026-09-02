@@ -167,7 +167,7 @@ export default function Widgets() {
         <s-paragraph>
           <s-text color="subdued">
             Publishing takes about a minute to reach your storefront. Shoppers&rsquo;
-            browsers hold on to the settings, so if Shopdart is briefly
+            browsers hold on to the settings, so if DPS is briefly
             unreachable your videos keep playing from the copy they already
             have.
           </s-text>

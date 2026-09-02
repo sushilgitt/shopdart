@@ -67,7 +67,7 @@ export async function getAccessToken(shop: Shop): Promise<string> {
 }
 
 export interface BrowsableReel extends InstagramMedia {
-  /** True when this reel is already in the merchant's Shopdart library. */
+  /** True when this reel is already in the merchant's DPS library. */
   imported: boolean;
 }
 

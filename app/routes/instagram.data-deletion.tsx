@@ -100,14 +100,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ? `<h1>Deletion complete</h1>
        <p>Request <code>${code}</code> has been processed. The Instagram
        connection and every reel imported from it have been removed from
-       Shopdart.</p>`
+       DPS.</p>`
     : `<h1>Unknown request</h1>
        <p>No deletion request matches that code.</p>`;
 
   return new Response(
     `<!doctype html><meta charset="utf-8">
      <meta name="viewport" content="width=device-width,initial-scale=1">
-     <title>Shopdart — data deletion</title>
+     <title>DPS — data deletion</title>
      <main style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:72px 24px;line-height:1.6">
        ${body}
      </main>`,

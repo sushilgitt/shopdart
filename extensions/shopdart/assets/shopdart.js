@@ -1,5 +1,5 @@
 /**
- * Shopdart storefront player.
+ * DPS storefront player.
  *
  * No framework, no dependencies, no build step. This file runs on every page
  * of a merchant's storefront, so weight is a feature: the whole thing is
@@ -242,14 +242,14 @@
     }
   }
 
-  /** "Powered by Shopdart" badge — free plan only. */
+  /** "Powered by DPS" badge — free plan only. */
   function buildWatermark() {
     var link = el("a", "shopdart__badge", {
       href: "https://shopdart.io",
       target: "_blank",
       rel: "noopener nofollow",
     });
-    link.textContent = "Powered by Shopdart";
+    link.textContent = "Powered by DPS";
     return link;
   }
 

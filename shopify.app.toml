@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "6e20e96d66de0afff17134950c91e63c"
-name = "Shop Dart"
+name = "DPS Shoppable Video & UGC"
 handle = "shopdart"
 application_url = "https://shopdart.91.239.208.85.sslip.io"
 embedded = true
@@ -11,7 +11,7 @@ embedded = true
 #   video tags. The storefront payload is a static document with no Admin API
 #   behind it, so whatever is cached from here is exactly what shoppers see.
 #
-# write_pixels + read_customer_events — the Shopdart analytics web pixel.
+# write_pixels + read_customer_events — the DPS analytics web pixel.
 #   Purchase attribution has to observe checkout, and the theme extension's
 #   script does not run there. write_pixels lets the app create the WebPixel
 #   record (it implies read_pixels); read_customer_events is what makes Shopify

@@ -12,11 +12,11 @@ import { CONTACT_EMAIL, LegalPage, Section, listStyle } from "../lib/legal-page"
  * one that understates it.
  */
 export const meta = () => [
-  { title: "Privacy Policy — Shopdart" },
+  { title: "Privacy Policy — DPS" },
   {
     name: "description",
     content:
-      "How Shopdart collects, uses and stores data for merchants and shoppers.",
+      "How DPS collects, uses and stores data for merchants and shoppers.",
   },
 ];
 
@@ -24,21 +24,21 @@ export default function Privacy() {
   return (
     <LegalPage
       title="Privacy Policy"
-      intro="Shopdart turns a merchant's own Instagram reels and YouTube videos into shoppable videos on their Shopify storefront. This policy explains exactly what we collect, why, and how long we keep it."
+      intro="DPS turns a merchant's own Instagram reels and YouTube videos into shoppable videos on their Shopify storefront. This policy explains exactly what we collect, why, and how long we keep it."
     >
       <Section heading="Who we are">
         <p style={{ margin: 0 }}>
-          Shopdart is a Shopify application operated by the developer contactable
+          DPS is a Shopify application operated by the developer contactable
           at <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. In data
-          protection terms, the merchant installing Shopdart is the controller of
-          their store and shopper data; Shopdart acts as a processor on their
+          protection terms, the merchant installing DPS is the controller of
+          their store and shopper data; DPS acts as a processor on their
           behalf.
         </p>
       </Section>
 
       <Section heading="Store data we collect">
         <p style={{ margin: "0 0 8px" }}>
-          When a merchant installs Shopdart, we read the following from the
+          When a merchant installs DPS, we read the following from the
           Shopify Admin API and store it:
         </p>
         <ul style={listStyle}>
@@ -73,8 +73,8 @@ export default function Privacy() {
           </li>
         </ul>
         <p style={{ margin: 0 }}>
-          Shopdart cannot post, comment, message or delete anything on Instagram.
-          A merchant may disconnect at any time, and removing Shopdart from their
+          DPS cannot post, comment, message or delete anything on Instagram.
+          A merchant may disconnect at any time, and removing DPS from their
           Instagram account also clears the connection here.
         </p>
       </Section>
@@ -97,7 +97,7 @@ export default function Privacy() {
           </a>
           . Where a merchant proves channel ownership by signing in with Google,
           the access token is used for that single check and then revoked and
-          discarded — it is never stored. Shopdart&rsquo;s use of information received
+          discarded — it is never stored. DPS&rsquo;s use of information received
           from Google APIs adheres to the{" "}
           <a
             href="https://developers.google.com/terms/api-services-user-data-policy"
@@ -189,7 +189,7 @@ export default function Privacy() {
             the controller of that data and we will act on their instruction.
           </li>
           <li>
-            <strong>Instagram users:</strong> removing Shopdart from your
+            <strong>Instagram users:</strong> removing DPS from your
             Instagram account triggers our deauthorisation endpoint, which
             deletes the connection. A data deletion request additionally removes
             every video imported from your account.

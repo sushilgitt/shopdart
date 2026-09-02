@@ -71,7 +71,7 @@ export class TikTokOwnershipError extends Error {
  */
 export class TikTokUnreachableError extends Error {
   constructor() {
-    super("Shopdart could not reach TikTok to check that post. Try again shortly.");
+    super("DPS could not reach TikTok to check that post. Try again shortly.");
     this.name = "TikTokUnreachableError";
   }
 }

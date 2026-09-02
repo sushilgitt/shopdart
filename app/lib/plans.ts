@@ -41,7 +41,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     videos: 100,
     trialDays: 7,
     watermark: false,
-    features: ["Remove Shopdart watermark", "Instagram sync", "Basic analytics"],
+    features: ["Remove DPS watermark", "Instagram sync", "Basic analytics"],
   },
   PREMIUM: {
     id: Plan.PREMIUM,

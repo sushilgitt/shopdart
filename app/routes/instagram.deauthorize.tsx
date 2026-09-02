@@ -6,7 +6,7 @@ import prisma from "../db.server";
 /**
  * Meta deauthorize callback: POST /instagram/deauthorize
  *
- * Fired when someone removes Shopdart from their Instagram account rather than
+ * Fired when someone removes DPS from their Instagram account rather than
  * disconnecting inside our admin. Without this the stored token silently rots:
  * every sync fails, the merchant is told their connection "expired", and we
  * keep a credential we are no longer entitled to hold.

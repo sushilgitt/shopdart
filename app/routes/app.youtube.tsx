@@ -254,7 +254,7 @@ export default function YouTube() {
       {!configured && (
         <s-section heading="YouTube isn't set up yet">
           <s-paragraph>
-            Shopdart needs a YouTube Data API key and Google OAuth credentials
+            DPS needs a YouTube Data API key and Google OAuth credentials
             before channels can be connected. Add YOUTUBE_API_KEY,
             GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI.
           </s-paragraph>
@@ -270,7 +270,7 @@ export default function YouTube() {
           </s-paragraph>
           <s-paragraph>
             <s-text color="subdued">
-              Shopdart only ever reads your public videos. It never posts,
+              DPS only ever reads your public videos. It never posts,
               comments or changes anything on your channel.
             </s-text>
           </s-paragraph>

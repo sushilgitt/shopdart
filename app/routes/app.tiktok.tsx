@@ -233,7 +233,7 @@ export default function TikTok() {
       {!bunnyReady && (
         <s-section heading="Video hosting isn't connected yet">
           <s-paragraph>
-            Shopdart streams video through Bunny Stream. Add your library ID,
+            DPS streams video through Bunny Stream. Add your library ID,
             API key and CDN hostname before uploading.
           </s-paragraph>
         </s-section>
@@ -243,7 +243,7 @@ export default function TikTok() {
         <s-section heading="Connect your TikTok account">
           <s-paragraph>
             <s-text color="subdued">
-              Shopdart only accepts videos from an account you have proven is
+              DPS only accepts videos from an account you have proven is
               yours. Enter your username to start.
             </s-text>
           </s-paragraph>
@@ -302,7 +302,7 @@ export default function TikTok() {
           <s-paragraph>
             <s-text color="subdued">
               Paste the links to your TikTok posts — one per line, up to 25 at a
-              time. Shopdart checks each one belongs to @{username}, then adds
+              time. DPS checks each one belongs to @{username}, then adds
               it below ready to tag and publish.
             </s-text>
           </s-paragraph>
@@ -450,7 +450,7 @@ export default function TikTok() {
                           }}
                           onDropRejected={() =>
                             setNotice(
-                              "That file isn't a video Shopdart can upload.",
+                              "That file isn't a video DPS can upload.",
                             )
                           }
                           {...(blocked ? { disabled: true, error: blocked } : {})}
@@ -499,7 +499,7 @@ export default function TikTok() {
       <s-section slot="aside" heading="Getting your video files">
         <s-paragraph>
           <s-text color="subdued">
-            A video with its file plays from Shopdart&rsquo;s own CDN: it
+            A video with its file plays from DPS&rsquo;s own CDN: it
             autoplays as shoppers scroll, and it plays everywhere, including
             countries that block TikTok. This is the setup worth aiming for.
           </s-text>

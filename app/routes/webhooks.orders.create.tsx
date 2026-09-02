@@ -8,7 +8,7 @@ import { attributeOrder } from "../lib/attribution.server";
  * Requires the read_orders scope, which is protected customer data — request
  * approval in the Partner dashboard before submitting for review.
  *
- * Only the Shopdart cart attributes are read. Nothing about the customer is
+ * Only the DPS cart attributes are read. Nothing about the customer is
  * stored: the attribution row holds an order id and a total, not a person.
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -17,7 +17,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     const attributed = await attributeOrder(shop, payload as never);
     if (attributed) {
-      console.log(`${topic} for ${shop}: attributed to a Shopdart video`);
+      console.log(`${topic} for ${shop}: attributed to a DPS video`);
     }
   } catch (error) {
     console.error(`${topic} attribution failed for ${shop}`, error);

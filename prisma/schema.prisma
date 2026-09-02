@@ -1,4 +1,4 @@
-// Shopdart — shoppable videos for Shopify
+// DPS — shoppable videos for Shopify
 //
 // Design notes that matter when extending this file:
 //  * Video is source-agnostic on purpose. `source` + `sourceRef` form the

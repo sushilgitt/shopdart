@@ -170,7 +170,7 @@ export async function fetchOwnChannels(
 /**
  * Best-effort revocation of the one-time grant.
  *
- * The token is discarded either way, but revoking removes Shopdart from the
+ * The token is discarded either way, but revoking removes DPS from the
  * merchant's Google account permissions page rather than leaving an entry
  * there implying ongoing access we do not have.
  */

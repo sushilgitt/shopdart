@@ -3,7 +3,7 @@
  *
  * Runs only in the browser: it asks our server for a Bunny slot and signed TUS
  * credentials, then streams the file straight to Bunny. The bytes never pass
- * through Shopdart, and a dropped connection resumes rather than restarting.
+ * through DPS, and a dropped connection resumes rather than restarting.
  *
  * The credentials are issued by the /api/upload resource route rather than by
  * a page action, because a POST to a page route is a document request and
@@ -59,7 +59,7 @@ export async function startUpload(
     const response = await fetch("/api/upload", { method: "POST", body });
     data = (await response.json()) as CredentialsResponse;
   } catch {
-    return { ok: false, error: "Couldn't reach Shopdart. Check your connection and try again." };
+    return { ok: false, error: "Couldn't reach DPS. Check your connection and try again." };
   }
 
   if (!data.ok || !data.upload || !data.videoId) {

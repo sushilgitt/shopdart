@@ -1,4 +1,4 @@
-name = "Shopdart analytics"
+name = "DPS analytics"
 type = "web_pixel_extension"
 uid = "28900d13-f2b3-4ce8-85c9-6c7193a64bee"
 runtime_context = "strict"

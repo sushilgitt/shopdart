@@ -2,10 +2,10 @@ import { LegalPage, Section, listStyle } from "../lib/legal-page";
 
 /** Public terms of service: /terms */
 export const meta = () => [
-  { title: "Terms of Service — Shopdart" },
+  { title: "Terms of Service — DPS" },
   {
     name: "description",
-    content: "The terms under which merchants may use Shopdart.",
+    content: "The terms under which merchants may use DPS.",
   },
 ];
 
@@ -13,11 +13,11 @@ export default function Terms() {
   return (
     <LegalPage
       title="Terms of Service"
-      intro="These terms govern use of Shopdart. By installing the app on your Shopify store you agree to them."
+      intro="These terms govern use of DPS. By installing the app on your Shopify store you agree to them."
     >
       <Section heading="The service">
         <p style={{ margin: 0 }}>
-          Shopdart lets you import videos from sources you control, tag your
+          DPS lets you import videos from sources you control, tag your
           products on them, and display them on your Shopify storefront as
           shoppable video widgets.
         </p>
@@ -40,7 +40,7 @@ export default function Terms() {
 
       <Section heading="Acceptable use">
         <ul style={listStyle}>
-          <li>Do not use Shopdart for unlawful, deceptive or infringing content</li>
+          <li>Do not use DPS for unlawful, deceptive or infringing content</li>
           <li>
             Do not attempt to circumvent plan limits, or to inflate or falsify
             usage and analytics
@@ -68,7 +68,7 @@ export default function Terms() {
 
       <Section heading="Third-party services">
         <p style={{ margin: 0 }}>
-          Shopdart depends on Shopify, Meta (Instagram) and Google (YouTube).
+          DPS depends on Shopify, Meta (Instagram) and Google (YouTube).
           Your use of those integrations is also subject to their terms, and
           changes or outages on their side may affect availability. Videos from
           YouTube play in YouTube&rsquo;s own embedded player.
@@ -94,7 +94,7 @@ export default function Terms() {
 
       <Section heading="Liability">
         <p style={{ margin: 0 }}>
-          Shopdart is provided &ldquo;as is&rdquo;, without warranties of any
+          DPS is provided &ldquo;as is&rdquo;, without warranties of any
           kind. To the extent permitted by law, our total liability arising from
           your use of the app is limited to the amount you paid us in the twelve
           months before the claim.

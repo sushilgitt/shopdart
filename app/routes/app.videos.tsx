@@ -184,7 +184,7 @@ export default function Videos() {
       {!bunnyReady && (
         <s-section heading="Video hosting isn't connected yet">
           <s-paragraph>
-            Shopdart streams video through Bunny Stream. Add your library ID, API
+            DPS streams video through Bunny Stream. Add your library ID, API
             key and CDN hostname before uploading.
           </s-paragraph>
         </s-section>
@@ -209,7 +209,7 @@ export default function Videos() {
           <s-text color="subdued">
             Drop video files here, or click to choose them. Files upload straight
             from your browser to Bunny Stream, so they never pass through
-            Shopdart and large uploads resume if the connection drops.
+            DPS and large uploads resume if the connection drops.
           </s-text>
         </s-paragraph>
         <s-drop-zone
@@ -228,7 +228,7 @@ export default function Videos() {
             if (picked.length > 0) void handleFiles(picked);
           }}
           onDropRejected={() =>
-            setNotice("That file isn't a video Shopdart can upload.")
+            setNotice("That file isn't a video DPS can upload.")
           }
           {...(uploadsDisabled ? { disabled: true } : {})}
           {...(blockedReason ? { error: blockedReason } : {})}

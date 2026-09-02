@@ -40,7 +40,7 @@ export function LegalPage({
         href="/"
         style={{ color: "#5c6b70", textDecoration: "none", fontSize: 14 }}
       >
-        ← Shopdart
+        ← DPS
       </a>
       <h1 style={{ fontSize: 30, margin: "20px 0 8px", lineHeight: 1.2 }}>
         {title}

@@ -9,7 +9,7 @@
  * the same class of dependency this project already refused for Instagram
  * public links — ongoing breakage, and terms we would be knowingly violating.
  *
- * So a TikTok post reaches Shopdart the one legitimate way it can: the
+ * So a TikTok post reaches DPS the one legitimate way it can: the
  * merchant supplies the original file they filmed. This module's whole job is
  * to turn a pasted link into provenance — which post it was, who posted it,
  * what it was called — so the library can show the connection and refuse the

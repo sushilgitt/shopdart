@@ -1,4 +1,4 @@
-/* Shopdart storefront player.
+/* DPS storefront player.
    Everything is namespaced under .shopdart so it cannot leak into the theme,
    and every value that a merchant can change arrives as a custom property set
    inline by the player. */

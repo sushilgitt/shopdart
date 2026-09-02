@@ -52,7 +52,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return {
       ok: false as const,
       message:
-        "This link is invalid or has expired. Start the connection again from Shopdart.",
+        "This link is invalid or has expired. Start the connection again from DPS.",
     };
   }
 
@@ -85,7 +85,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return {
       ok: false as const,
       message:
-        "Could not complete the connection. Please try again from Shopdart.",
+        "Could not complete the connection. Please try again from DPS.",
     };
   }
 };
@@ -110,7 +110,7 @@ export default function InstagramCallback() {
       </h1>
       <p style={{ margin: "0 0 20px", color: "#5c6b70" }}>
         {result.ok
-          ? `Connected as @${result.username}. You can close this tab and return to Shopdart to import your reels.`
+          ? `Connected as @${result.username}. You can close this tab and return to DPS to import your reels.`
           : result.message}
       </p>
       <button

@@ -119,7 +119,7 @@ export async function recordPurchase(
   return true;
 }
 
-/** Reads the Shopdart cart attributes off an orders/create webhook payload. */
+/** Reads the DPS cart attributes off an orders/create webhook payload. */
 export async function attributeOrder(
   shopDomain: string,
   payload: OrderWebhookPayload,
