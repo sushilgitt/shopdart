@@ -45,7 +45,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     price: 19,
     views: 3_000,
     videos: 100,
-    trialDays: 7,
+    trialDays: 0,
     watermark: false,
     features: ["Everything in the Free plan", "Basic analytics"],
   },
@@ -55,7 +55,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     price: 59,
     views: 20_000,
     videos: 250,
-    trialDays: 7,
+    trialDays: 0,
     watermark: false,
     features: [
       "Everything in the Basic plan",
@@ -69,7 +69,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     price: 99,
     views: 50_000,
     videos: 1_000,
-    trialDays: 7,
+    trialDays: 0,
     watermark: false,
     features: [
       "Everything in the Premium plan",
