@@ -52,7 +52,7 @@ export const PLANS: Record<Plan, PlanDefinition> = {
   PREMIUM: {
     id: Plan.PREMIUM,
     name: "Premium",
-    price: 59,
+    price: 60,
     views: 20_000,
     videos: 250,
     trialDays: 0,
