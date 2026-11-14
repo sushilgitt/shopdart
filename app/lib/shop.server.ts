@@ -1,4 +1,4 @@
-import type { Shop } from "@prisma/client";
+import { Prisma, type Shop } from "@prisma/client";
 import prisma from "../db.server";
 
 /**
@@ -22,7 +22,22 @@ export async function ensureShop(domain: string): Promise<Shop> {
     return existing;
   }
 
-  return prisma.shop.create({ data: { domain } });
+  try {
+    return await prisma.shop.create({ data: { domain } });
+  } catch (error) {
+    // The first open of a fresh install runs the /app layout loader and the
+    // child route's loader in parallel, and both land here. Both see no row,
+    // both create, and the loser hits the unique index on `domain` — which
+    // surfaced as "Application Error" on the merchant's very first visit. The
+    // row the other request created is exactly what we wanted, so use it.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return prisma.shop.findUniqueOrThrow({ where: { domain } });
+    }
+    throw error;
+  }
 }
 
 /**
